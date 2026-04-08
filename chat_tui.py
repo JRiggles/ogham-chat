@@ -11,7 +11,11 @@ from textual.widgets import Footer, Header, Static, TextArea
 
 from backend import ChatConfig, LocalChatBackend
 from components.chat_log import ChatLog
-from components.composer import ChatComposer, ChatComposerSubmit
+from components.composer import (
+    ChatComposer,
+    ChatComposerSubmit,
+    ChatComposerTyping,
+)
 
 
 class ChatApp(App[None]):
@@ -56,7 +60,10 @@ class ChatApp(App[None]):
         self.config = config
         self.shutting_down = False
         self.backend = LocalChatBackend(
-            config, self._on_network_message, self._set_status
+            config=config,
+            on_message=self._on_network_message,
+            on_status=self._set_status,
+            on_typing=self._on_network_typing,
         )
 
     def compose(self) -> ComposeResult:
@@ -77,7 +84,7 @@ class ChatApp(App[None]):
         if theme is None:
             chat.set_message_styles('green', 'blue')
         else:
-            chat.set_message_styles(str(theme.primary), str(theme.secondary))
+            chat.set_message_styles(str(theme.primary), str(theme.success))
         self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
         if self.config.mode == 'host':
             self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
@@ -109,17 +116,31 @@ class ChatApp(App[None]):
             return
 
         await self.backend.send(text)
+        await self.backend.send_typing(False)
+
+    async def on_chat_composer_typing(
+        self, message: ChatComposerTyping
+    ) -> None:
+        await self.backend.send_typing(message.active)
 
     def _on_network_message(self, username: str, text: str) -> None:
         if self.shutting_down:
             return
 
         cleaned = self._sanitize_text(text)
-        self.query_one('#chat', ChatLog).append_chat_message(
+        chat = self.query_one('#chat', ChatLog)
+        chat.set_peer_typing(username, False)
+        chat.append_chat_message(
             username=username,
             text=cleaned,
             timestamp=datetime.now().strftime('%H:%M:%S'),
         )
+
+    def _on_network_typing(self, username: str, active: bool) -> None:
+        if self.shutting_down:
+            return
+
+        self.query_one('#chat', ChatLog).set_peer_typing(username, active)
 
     def _set_status(self, text: str) -> None:
         if self.shutting_down:

@@ -92,6 +92,7 @@ class ChatLog(RichLog):
         self.self_username = self_username
         self.renderer = renderer or ChatMessageRenderer()
         self.messages: list[ChatMessage] = []
+        self.typing_peers: set[str] = set()
 
     def append_chat_message(
         self, username: str, text: str, timestamp: str
@@ -117,6 +118,17 @@ class ChatLog(RichLog):
         self.renderer.peer_style = peer_style
         self.rerender()
 
+    def set_peer_typing(self, username: str, active: bool) -> None:
+        if username == self.self_username:
+            return
+
+        if active:
+            self.typing_peers.add(username)
+        else:
+            self.typing_peers.discard(username)
+
+        self.rerender()
+
     def rerender(self) -> None:
         width = max(self.size.width, 1)
         self.clear()
@@ -125,3 +137,8 @@ class ChatLog(RichLog):
                 message, width=width, self_username=self.self_username
             ):
                 self.write(line)
+
+        if self.typing_peers:
+            names = ', '.join(sorted(self.typing_peers))
+            suffix = 'is typing...' if len(self.typing_peers) == 1 else 'are typing...'
+            self.write(Text(f'{names} {suffix}', style='dim italic'))

@@ -11,10 +11,12 @@ class LocalChatBackend:
         config: ChatConfig,
         on_message: Callable[[str, str], None],
         on_status: Callable[[str], None],
+        on_typing: Callable[[str, bool], None],
     ) -> None:
         self.config = config
         self.on_message = on_message
         self.on_status = on_status
+        self.on_typing = on_typing
         self.server: asyncio.AbstractServer | None = None
         self.server_writer: asyncio.StreamWriter | None = None
         self.peer_writers: set[asyncio.StreamWriter] = set()
@@ -56,11 +58,36 @@ class LocalChatBackend:
 
     async def send(self, text: str) -> None:
         payload = (
-            json.dumps({'name': self.config.username, 'text': text}) + '\n'
+            json.dumps(
+                {
+                    'type': 'message',
+                    'name': self.config.username,
+                    'text': text,
+                }
+            )
+            + '\n'
         )
 
         if self.server_writer is None:
             self.on_status('Not connected.')
+            return
+
+        self.server_writer.write(payload.encode('utf-8'))
+        await self.server_writer.drain()
+
+    async def send_typing(self, active: bool) -> None:
+        payload = (
+            json.dumps(
+                {
+                    'type': 'typing',
+                    'name': self.config.username,
+                    'active': active,
+                }
+            )
+            + '\n'
+        )
+
+        if self.server_writer is None:
             return
 
         self.server_writer.write(payload.encode('utf-8'))
@@ -84,10 +111,20 @@ class LocalChatBackend:
 
                 try:
                     packet = json.loads(line.decode('utf-8'))
+                    packet_type = packet.get('type', 'message')
                     name = packet.get('name', 'unknown')
-                    text = packet.get('text', '')
                 except json.JSONDecodeError:
                     continue
+
+                if packet_type == 'typing':
+                    active = bool(packet.get('active', False))
+                    if self.config.mode == 'host' and writer in self.peer_writers:
+                        await self._broadcast(line)
+                    else:
+                        self.on_typing(name, active)
+                    continue
+
+                text = packet.get('text', '')
 
                 if self.config.mode == 'host' and writer in self.peer_writers:
                     await self._broadcast(line)
