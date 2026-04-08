@@ -118,7 +118,14 @@ class LocalChatBackend:
 
                 if packet_type == 'typing':
                     active = bool(packet.get('active', False))
+<<<<<<< HEAD
                     if self.config.mode == 'host' and writer in self.peer_writers:
+=======
+                    if (
+                        self.config.mode == 'host'
+                        and writer in self.peer_writers
+                    ):
+>>>>>>> 088ad79 (feat: implement typing indicator functionality in chat application)
                         await self._broadcast(line)
                     else:
                         self.on_typing(name, active)
