@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Chat: Host Endpoint",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/chat_tui.py",
+        "host",
+        "--port",
+        "9000",
+        "--name",
+        "alice"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: Join Endpoint",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/chat_tui.py",
+        "join",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "9000",
+        "--name",
+        "bob"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}
