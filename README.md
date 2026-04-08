@@ -1,4 +1,4 @@
-# ogham-chat
+# Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜
 
 Minimal in-terminal chat app built with Textual.
 
