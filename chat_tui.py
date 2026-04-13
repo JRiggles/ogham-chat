@@ -9,6 +9,7 @@ from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static, TextArea
 
+from assets.style.theme import NOSTALGOS_12
 from backend import ChatConfig, LocalChatBackend
 from components.chat_log import ChatLog
 from components.composer import (
@@ -22,34 +23,7 @@ class ChatApp(App[None]):
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     TITLE = 'Ogham Chat'
     SUB_TITLE = 'Local Terminal Relay'  # TODO: dynamic status? better sub?
-
-    CSS = """
-    Screen {
-        layout: vertical;
-    }
-
-    #chat {
-        height: 1fr;
-        overflow-x: hidden;
-        overflow-y: auto;
-        scrollbar-gutter: stable;
-        border: round $accent;
-        margin: 0 1;
-        padding: 1 2 1 2;
-    }
-
-    #composer {
-        height: 6;
-        border: round $accent;
-        margin: 0 1;
-        padding: 1 2 1 2;
-    }
-
-    #status {
-        height: 1;
-        margin: 0 1;
-    }
-    """
+    CSS_PATH = 'assets/style/chat.tcss'
 
     BINDINGS = [
         ('ctrl+c', 'quit', 'Quit'),
@@ -76,6 +50,8 @@ class ChatApp(App[None]):
         yield Footer()
 
     async def on_mount(self) -> None:
+        self.register_theme(NOSTALGOS_12)
+        self.theme = 'nostalgos-12'
         await self.backend.start()
         chat = self.query_one('#chat', ChatLog)
         composer = self.query_one('#composer', TextArea)
@@ -162,7 +138,9 @@ class ChatApp(App[None]):
     def _sanitize_text(self, text: str) -> str:
         text = self.ANSI_ESCAPE_RE.sub('', text)
         return ''.join(
-            ch for ch in text if ch == '\t' or ch == ' ' or ch.isprintable()
+            ch
+            for ch in text
+            if ch == '\n' or ch == '\t' or ch == ' ' or ch.isprintable()
         )
 
 

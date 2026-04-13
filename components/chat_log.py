@@ -30,13 +30,13 @@ class ChatMessageRenderer:
 
         is_self = message.username == self_username
         line_style = self.self_style if is_self else self.peer_style
-        header_style = f'bold dim {line_style}'
-        name_style = f'bold dim {line_style}'
+        header_style = f'bold dim {line_style} reverse'
+        name_style = f'bold {line_style} reverse'
         body_width = max(width, 1)
 
         rendered_lines: list[Text] = []
 
-        header = f'{message.username} - {message.timestamp}'
+        header = f' {message.username} - {message.timestamp} '
         rendered_header = Text(header, style=header_style)
         name_start = rendered_header.plain.find(message.username)
         if name_start != -1:
@@ -47,14 +47,7 @@ class ChatMessageRenderer:
             )
         rendered_lines.append(rendered_header)
 
-        wrapped = textwrap.wrap(
-            message.text,
-            width=body_width,
-            replace_whitespace=False,
-            drop_whitespace=False,
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or ['']
+        wrapped = self._wrap_preserving_newlines(message.text, body_width)
 
         for chunk in wrapped:
             rendered_lines.append(Text(chunk, style=line_style))
@@ -67,17 +60,28 @@ class ChatMessageRenderer:
         self, message: ChatMessage, width: int
     ) -> list[Text]:
         system_width = max(width, 1)
-        wrapped_system = textwrap.wrap(
-            message.text,
-            width=system_width,
-            replace_whitespace=False,
-            drop_whitespace=False,
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or ['']
+        wrapped_system = self._wrap_preserving_newlines(
+            message.text, system_width
+        )
         rendered_system = [Text(line, style='dim') for line in wrapped_system]
         rendered_system.append(Text(''))
         return rendered_system
+
+    def _wrap_preserving_newlines(self, text: str, width: int) -> list[str]:
+        wrapped_lines: list[str] = []
+        for raw_line in text.split('\n'):
+            wrapped_lines.extend(
+                textwrap.wrap(
+                    raw_line,
+                    width=width,
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or ['']
+            )
+        return wrapped_lines
 
 
 class ChatLog(RichLog):

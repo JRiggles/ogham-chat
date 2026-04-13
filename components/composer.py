@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from typing import cast
-import asyncio
 
 from textual import events
 from textual.message import Message
@@ -26,14 +25,19 @@ class ChatComposerTyping(Message):
 
 class EnterToSubmitMixin:
     async def on_key(self, event: events.Key) -> None:
-        # Let Shift+Enter (and any non-Enter key) fall through to TextArea.
-        if event.key != 'enter':
-            return
-
         composer = cast(TextArea, self)
-        event.prevent_default()
-        event.stop()
-        composer.post_message(ChatComposerSubmit(composer.text))
+        match event.name:
+            case 'enter':
+                event.prevent_default()
+                event.stop()
+                composer.post_message(ChatComposerSubmit(composer.text))
+            case 'shift_enter':
+                event.prevent_default()
+                event.stop()
+                composer.insert('\n')
+            case _:
+                return
+
 
 
 class ChatComposer(EnterToSubmitMixin, TextArea):
