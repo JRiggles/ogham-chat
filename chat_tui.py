@@ -33,6 +33,7 @@ class ChatApp(App[None]):
         super().__init__()
         self.config = config
         self.shutting_down = False
+        self.active_peer: str | None = None
         self.backend = LocalChatBackend(
             config=config,
             on_message=self._on_network_message,
@@ -103,6 +104,7 @@ class ChatApp(App[None]):
         if self.shutting_down:
             return
 
+        self._set_active_peer(username)
         cleaned = self._sanitize_text(text)
         chat = self.query_one('#chat', ChatLog)
         chat.set_peer_typing(username, False)
@@ -116,7 +118,20 @@ class ChatApp(App[None]):
         if self.shutting_down:
             return
 
+        self._set_active_peer(username)
         self.query_one('#chat', ChatLog).set_peer_typing(username, active)
+
+    def _set_active_peer(self, username: str) -> None:
+        if not username or username == self.config.username:
+            return
+
+        if self.active_peer == username:
+            return
+
+        self.active_peer = username
+        self.query_one('#chat', ChatLog).border_title = (
+            f'Chatting with {username}'
+        )
 
     def _set_status(self, text: str) -> None:
         if self.shutting_down:
