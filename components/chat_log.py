@@ -140,13 +140,9 @@ class ChatLog(RichLog):
 
         if self.typing_peers:
             names = ', '.join(sorted(self.typing_peers))
-<<<<<<< HEAD
-            suffix = 'is typing...' if len(self.typing_peers) == 1 else 'are typing...'
-=======
             suffix = (
                 'is typing...'
                 if len(self.typing_peers) == 1
                 else 'are typing...'
             )
->>>>>>> 088ad79 (feat: implement typing indicator functionality in chat application)
             self.write(Text(f'{names} {suffix}', style='dim italic'))
