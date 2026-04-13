@@ -1,0 +1,40 @@
+Screen {
+    layout: vertical;
+}
+
+#chat {
+    height: 1fr;
+    background: $background;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    border: round $foreground;
+    margin: 0 1;
+    padding: 1 2 1 2;
+}
+
+#composer {
+    height: 6;
+    background: $background;
+    color: $foreground;
+    border: round $accent;
+    overflow-x: hidden;
+    overflow-y: auto;
+    margin: 0 1;
+    padding: 1 2 1 2;
+}
+
+#composer .text-area--cursor-line {
+    background: $background;
+}
+
+#composer .text-area--text {
+    background: $background;
+}
+
+#status {
+    background: $background;
+    color: $success;
+    height: 1;
+    margin: 0 1;
+}
