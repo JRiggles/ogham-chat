@@ -42,6 +42,22 @@
         "clear": false
       },
       "problemMatcher": []
+    },
+    {
+      "label": "FastAPI Deploy",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/fastapi",
+      "args": [
+        "deploy"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": false
+      },
+      "group": "build",
+      "problemMatcher": []
     }
   ]
 }
