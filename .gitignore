@@ -19,3 +19,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# misc
+nb.hdnb
