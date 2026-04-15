@@ -6,8 +6,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "-m",
-        "frontend.chat_tui",
+        "${workspaceFolder}/main.py",
         "host",
         "--port",
         "9000",
@@ -27,8 +26,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "-m",
-        "frontend.chat_tui",
+        "${workspaceFolder}/main.py",
         "join",
         "--host",
         "127.0.0.1",
@@ -66,8 +64,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "-m",
-        "frontend.chat_tui",
+        "${workspaceFolder}/main.py",
         "relay",
         "--url",
         "wss://ogham-chat.fastapicloud.dev/api/v1/ws",
@@ -88,8 +85,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/python",
       "args": [
-        "-m",
-        "frontend.chat_tui",
+        "${workspaceFolder}/main.py",
         "relay",
         "--url",
         "wss://ogham-chat.fastapicloud.dev/api/v1/ws",
