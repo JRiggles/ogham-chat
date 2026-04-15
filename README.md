@@ -25,3 +25,19 @@ python chat_tui.py join --host 127.0.0.1 --port 9000 --name bob
 ```
 
 Both terminals can send messages by typing and pressing Enter.
+
+## Run via relay
+
+Use the same TUI and point it at your deployed WebSocket relay endpoint.
+
+Terminal 1:
+
+```bash
+python chat_tui.py relay --url wss://ogham-chat.fastapicloud.dev/api/v1/ws --name alice
+```
+
+Terminal 2:
+
+```bash
+python chat_tui.py relay --url "wss://ogham-chat.fastapicloud.dev/api/v1/ws" --name bob
+```
