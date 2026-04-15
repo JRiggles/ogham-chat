@@ -10,7 +10,6 @@ from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static, TextArea
 
-from assets.style.theme import NOSTALGOS_12
 from backend import ChatConfig, LocalChatBackend, RelayChatBackend
 from backend.types import ChatMessage
 from components.chat_log import ChatLog
@@ -19,6 +18,7 @@ from components.composer import (
     ChatComposerSubmit,
     ChatComposerTyping,
 )
+from frontend.assets.style.theme import NOSTALGOS_12
 
 
 class ChatApp(App[None]):
@@ -132,9 +132,9 @@ class ChatApp(App[None]):
             return
 
         self.active_peer = username
-        self.query_one('#chat', ChatLog).border_title = (
-            f'Chatting with {username}'
-        )
+        self.query_one(
+            '#chat', ChatLog
+        ).border_title = f'Chatting with {username}'
 
     def _set_status(self, text: str) -> None:
         if self.shutting_down:
@@ -187,8 +187,7 @@ def parse_args() -> ChatConfig:
     join_parser.add_argument('--name', default='guest')
 
     relay_parser = subparsers.add_parser(
-        'relay',
-        help='Join remote relay endpoint'
+        'relay', help='Join remote relay endpoint'
     )
     relay_parser.add_argument('--url', required=True)
     relay_parser.add_argument('--name', default='guest')
@@ -201,9 +200,7 @@ def parse_args() -> ChatConfig:
         )
 
     if args.mode == 'relay':
-        return ChatConfig(
-            mode='relay', username=args.name, relay_url=args.url
-        )
+        return ChatConfig(mode='relay', username=args.name, relay_url=args.url)
 
     return ChatConfig(
         mode='join', username=args.name, host=args.host, port=args.port
