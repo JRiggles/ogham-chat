@@ -7,6 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import websockets
+from websockets.exceptions import ConnectionClosed
 
 from backend.models import ChatConfig
 from backend.types import ChatMessage
@@ -26,7 +27,6 @@ class RelayChatBackend:
         self.on_typing = on_typing
         self.websocket = None
         self.read_task: asyncio.Task | None = None
-        self.heartbeat_task: asyncio.Task | None = None
         self.relay_url: str | None = None
         self.stopping = False
 
@@ -36,9 +36,9 @@ class RelayChatBackend:
 
         self.relay_url = self._normalize_relay_url(self.config.relay_url)
         self.stopping = False
-        await self._connect()
-        self.read_task = asyncio.create_task(self._read_loop())
-        self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        self.on_status(f'Connecting to relay {self.relay_url}...')
+        if self.read_task is None:
+            self.read_task = asyncio.create_task(self._read_loop())
 
     async def stop(self) -> None:
         self.stopping = True
@@ -48,29 +48,12 @@ class RelayChatBackend:
                 await self.read_task
             self.read_task = None
 
-        if self.heartbeat_task is not None:
-            self.heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self.heartbeat_task
-            self.heartbeat_task = None
-
-        await self._reset_websocket()
-
-    async def _connect(self) -> None:
-        if not self.relay_url:
-            raise ValueError('relay_url is required for relay mode')
-
-        self.websocket = await websockets.connect(
-            self.relay_url,
-            ping_interval=20,
-            ping_timeout=20,
-            close_timeout=5,
-        )
-        self.on_status(f'Connected to relay {self.relay_url}')
+        await self._close_current_websocket()
 
     async def send(self, text: str) -> None:
-        if self.websocket is None:
-            self.on_status('Not connected.')
+        websocket = self.websocket
+        if websocket is None:
+            self.on_status('Not connected; waiting for relay reconnect...')
             return
 
         payload = {
@@ -79,13 +62,14 @@ class RelayChatBackend:
             'text': text,
         }
         try:
-            await self.websocket.send(json.dumps(payload))
-        except websockets.ConnectionClosed:
+            await websocket.send(json.dumps(payload))
+        except ConnectionClosed:
             self.on_status('Relay disconnected; reconnecting...')
-            await self._reset_websocket()
+            self.websocket = None
 
     async def send_typing(self, active: bool) -> None:
-        if self.websocket is None:
+        websocket = self.websocket
+        if websocket is None:
             return
 
         payload = {
@@ -94,64 +78,53 @@ class RelayChatBackend:
             'active': active,
         }
         try:
-            await self.websocket.send(json.dumps(payload))
-        except websockets.ConnectionClosed:
-            await self._reset_websocket()
+            await websocket.send(json.dumps(payload))
+        except ConnectionClosed:
+            self.websocket = None
 
     async def _read_loop(self) -> None:
-        while not self.stopping:
-            if self.websocket is None:
+        if not self.relay_url:
+            return
+
+        try:
+            async for websocket in websockets.connect(
+                self.relay_url,
+                ping_interval=10,
+                ping_timeout=10,
+                close_timeout=5,
+                open_timeout=10,
+            ):
+                if self.stopping:
+                    await websocket.close()
+                    return
+
+                self.websocket = websocket
+                self.on_status(f'Connected to relay {self.relay_url}')
+
                 try:
-                    await self._connect()
+                    async for raw in websocket:
+                        try:
+                            packet = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+
+                        try:
+                            self._handle_packet(packet)
+                        except Exception as exc:
+                            self.on_status(f'Ignored malformed packet: {exc}')
                 except asyncio.CancelledError:
                     return
-                except Exception as exc:
-                    self.on_status(f'Relay connect failed: {exc}')
-                    await asyncio.sleep(1.5)
-                    continue
-
-            try:
-                assert self.websocket is not None
-                async for raw in self.websocket:
-                    try:
-                        packet = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-
-                    try:
-                        self._handle_packet(packet)
-                    except Exception as exc:
-                        self.on_status(f'Ignored malformed packet: {exc}')
-            except asyncio.CancelledError:
-                return
-            except websockets.ConnectionClosed:
-                if not self.stopping:
-                    self.on_status('Relay disconnected; reconnecting...')
-            except Exception as exc:
-                if not self.stopping:
-                    self.on_status(f'Relay error: {exc}; reconnecting...')
-            finally:
-                await self._reset_websocket()
-
+                except ConnectionClosed:
+                    if not self.stopping:
+                        self.on_status('Relay disconnected; reconnecting...')
+                finally:
+                    if self.websocket is websocket:
+                        self.websocket = None
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
             if not self.stopping:
-                await asyncio.sleep(1.5)
-
-    async def _heartbeat_loop(self) -> None:
-        while not self.stopping:
-            await asyncio.sleep(5)
-            if self.websocket is None:
-                continue
-
-            payload = {
-                'kind': 'ping',
-                'sender': 'ogham-chat',
-                'is_system': True,
-                'ts': datetime.now(UTC).isoformat(),
-            }
-            try:
-                await self.websocket.send(json.dumps(payload))
-            except websockets.ConnectionClosed:
-                await self._reset_websocket()
+                self.on_status(f'Relay fatal error: {exc}')
 
     def _handle_packet(self, packet: dict) -> None:
         packet_type = packet.get('type')
@@ -174,7 +147,6 @@ class RelayChatBackend:
             return
 
         text = data.get('text')
-        # REVIEW: not sure about 'get' here - gotta figure out safe defaults
         if isinstance(text, str) and text:
             message_data = {
                 'id': data.get('id', uuid4()),
@@ -185,22 +157,23 @@ class RelayChatBackend:
             }
             self.on_message(ChatMessage.model_validate(message_data))
 
-    async def _reset_websocket(self) -> None:
-        if self.websocket is not None:
-            with contextlib.suppress(Exception):
-                await self.websocket.close()
-            self.websocket = None
+    async def _close_current_websocket(self) -> None:
+        websocket = self.websocket
+        self.websocket = None
+        if websocket is not None:
+            with contextlib.suppress(ConnectionClosed, RuntimeError):
+                await websocket.close()
 
     def _normalize_relay_url(self, relay_url: str) -> str:
         parts = urlsplit(relay_url)
         match parts.scheme:
             case 'wss':
                 return relay_url
-            case 'https':  # replace https with wss, keep rest of URL
+            case 'https':
                 return urlunsplit(('wss', *parts[1:]))
             case 'http' | 'ws':
                 raise ValueError('Insecure relay URL scheme not allowed.')
             case _:
                 raise ValueError(
-                    'Unsupported relay URL scheme "{parts.scheme}"'
+                    f'Unsupported relay URL scheme "{parts.scheme}"'
                 )
