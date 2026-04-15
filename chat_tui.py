@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import re
-from datetime import datetime
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -11,6 +12,7 @@ from textual.widgets import Footer, Header, Static, TextArea
 
 from assets.style.theme import NOSTALGOS_12
 from backend import ChatConfig, LocalChatBackend, RelayChatBackend
+from backend.types import ChatMessage
 from components.chat_log import ChatLog
 from components.composer import (
     ChatComposer,
@@ -105,19 +107,15 @@ class ChatApp(App[None]):
     ) -> None:
         await self.backend.send_typing(message.active)
 
-    def _on_network_message(self, username: str, text: str) -> None:
+    def _on_network_message(self, message: ChatMessage) -> None:
         if self.shutting_down:
             return
 
-        self._set_active_peer(username)
-        cleaned = self._sanitize_text(text)
+        self._set_active_peer(message.sender)
+        message.text = self._sanitize_text(message.text)
         chat = self.query_one('#chat', ChatLog)
-        chat.set_peer_typing(username, False)
-        chat.append_chat_message(
-            username=username,
-            text=cleaned,
-            timestamp=datetime.now().strftime('%H:%M:%S'),
-        )
+        chat.set_peer_typing(message.sender, False)
+        chat.append_message(message)
 
     def _on_network_typing(self, username: str, active: bool) -> None:
         if self.shutting_down:
@@ -150,9 +148,14 @@ class ChatApp(App[None]):
         status.update(f'{text} | Ctrl+C to quit')
 
     def _write_system_message(self, text: str) -> None:
-        self.query_one('#chat', ChatLog).append_system_message(
-            text=self._sanitize_text(text),
-            timestamp=datetime.now().strftime('%H:%M:%S'),
+        self.query_one('#chat', ChatLog).append_message(
+            ChatMessage(
+                id=uuid4(),
+                sender='ogham-chat',
+                text=self._sanitize_text(text),
+                created_at=datetime.now(UTC),
+                is_system=True,
+            )
         )
 
     def _sanitize_text(self, text: str) -> str:

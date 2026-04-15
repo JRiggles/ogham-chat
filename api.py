@@ -3,21 +3,23 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+from backend.types import ChatMessage, MessageTextStr, SenderStr
 
 app = FastAPI(title='Ogham Chat API', version='0.1.0')
 v1 = APIRouter(prefix='/api/v1', tags=['v1'])
 
 
 class MessageIn(BaseModel):
-    sender: str = Field(min_length=1, max_length=64)
-    text: str = Field(min_length=1, max_length=4000)
+    sender: SenderStr
+    text: MessageTextStr
 
 
 class MessageOut(BaseModel):
     id: UUID
     sender: str
-    text: str
+    text: str  # TODO: cryptographically secure message format
     created_at: datetime
 
 
@@ -49,8 +51,17 @@ class ConnectionManager:
         return len(self._connections)
 
 
-messages: list[MessageOut] = []
+messages: list[ChatMessage] = []
 ws_manager = ConnectionManager()
+
+
+def to_message_out(message: ChatMessage) -> MessageOut:
+    return MessageOut(
+        id=message.id,
+        sender=message.sender,
+        text=message.text,
+        created_at=message.created_at,
+    )
 
 
 @v1.get('/')
@@ -65,22 +76,23 @@ async def health() -> dict[str, str]:
 
 @v1.get('/messages', response_model=list[MessageOut])
 async def list_messages() -> list[MessageOut]:
-    return messages
+    return [to_message_out(message) for message in messages]
 
 
 @v1.post('/messages', response_model=MessageOut)
 async def create_message(payload: MessageIn) -> MessageOut:
-    message = MessageOut(
+    message = ChatMessage(
         id=uuid4(),
         sender=payload.sender,
         text=payload.text,
         created_at=datetime.now(UTC),
     )
     messages.append(message)
+    message_out = to_message_out(message)
     await ws_manager.broadcast_json(
-        {'type': 'message', 'data': message.model_dump(mode='json')}
+        {'type': 'message', 'data': message_out.model_dump(mode='json')}
     )
-    return message
+    return message_out
 
 
 @v1.get('/ws/health')
@@ -103,10 +115,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     try:
         while True:
             incoming = await websocket.receive_json()
+            if not isinstance(incoming, dict):
+                continue
+            if incoming.get('kind') == 'ping':
+                continue
             await ws_manager.broadcast_json(
                 {'type': 'event', 'data': incoming}
             )
     except WebSocketDisconnect:
+        pass
+    finally:
         ws_manager.disconnect(websocket)
 
 

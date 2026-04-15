@@ -1,16 +1,9 @@
 import textwrap
-from dataclasses import dataclass
 
 from rich.text import Text
 from textual.widgets import RichLog
 
-
-@dataclass
-class ChatMessage:
-    username: str
-    text: str
-    timestamp: str
-    is_system: bool = False
+from backend.types import ChatMessage
 
 
 class ChatMessageRenderer:
@@ -28,7 +21,7 @@ class ChatMessageRenderer:
         if message.is_system:
             return self._render_system_message(message, width)
 
-        is_self = message.username == self_username
+        is_self = message.sender == self_username
         line_style = self.self_style if is_self else self.peer_style
         header_style = f'bold dim {line_style} reverse'
         name_style = f'bold {line_style} reverse'
@@ -36,14 +29,14 @@ class ChatMessageRenderer:
 
         rendered_lines: list[Text] = []
 
-        header = f' {message.username} - {message.timestamp} '
+        header = f' {message.sender} - {message.created_at.strftime("%H:%M:%S")} '
         rendered_header = Text(header, style=header_style)
-        name_start = rendered_header.plain.find(message.username)
+        name_start = rendered_header.plain.find(message.sender)
         if name_start != -1:
             rendered_header.stylize(
                 name_style,
                 name_start,
-                name_start + len(message.username),
+                name_start + len(message.sender),
             )
         rendered_lines.append(rendered_header)
 
@@ -98,23 +91,8 @@ class ChatLog(RichLog):
         self.messages: list[ChatMessage] = []
         self.typing_peers: set[str] = set()
 
-    def append_chat_message(
-        self, username: str, text: str, timestamp: str
-    ) -> None:
-        self.messages.append(
-            ChatMessage(username=username, text=text, timestamp=timestamp)
-        )
-        self.rerender()
-
-    def append_system_message(self, text: str, timestamp: str) -> None:
-        self.messages.append(
-            ChatMessage(
-                username='system',
-                text=text,
-                timestamp=timestamp,
-                is_system=True,
-            )
-        )
+    def append_message(self, message: ChatMessage) -> None:
+        self.messages.append(message)
         self.rerender()
 
     def set_message_styles(self, self_style: str, peer_style: str) -> None:

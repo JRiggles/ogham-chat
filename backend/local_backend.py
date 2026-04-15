@@ -1,15 +1,18 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from typing import Callable
+from uuid import uuid4
 
 from backend.models import ChatConfig
+from backend.types import ChatMessage
 
 
 class LocalChatBackend:
     def __init__(
         self,
         config: ChatConfig,
-        on_message: Callable[[str, str], None],
+        on_message: Callable[[ChatMessage], None],
         on_status: Callable[[str], None],
         on_typing: Callable[[str, bool], None],
     ) -> None:
@@ -129,7 +132,14 @@ class LocalChatBackend:
                 if self.config.mode == 'host' and writer in self.peer_writers:
                     await self._broadcast(line)
                 else:
-                    self.on_message(name, text)
+                    self.on_message(
+                        ChatMessage(
+                            id=uuid4(),
+                            sender=name,
+                            text=text,
+                            created_at=datetime.now(UTC),
+                        )
+                    )
         except asyncio.CancelledError:
             return
         finally:
