@@ -14,3 +14,6 @@ members = [
     "ogham-chat",
     "ogham",
 ]
+
+[tool.fastapi]
+entrypoint = "api:app"
