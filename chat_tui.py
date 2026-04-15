@@ -10,7 +10,7 @@ from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static, TextArea
 
 from assets.style.theme import NOSTALGOS_12
-from backend import ChatConfig, LocalChatBackend
+from backend import ChatConfig, LocalChatBackend, RelayChatBackend
 from components.chat_log import ChatLog
 from components.composer import (
     ChatComposer,
@@ -34,7 +34,10 @@ class ChatApp(App[None]):
         self.config = config
         self.shutting_down = False
         self.active_peer: str | None = None
-        self.backend = LocalChatBackend(
+        backend_cls = (
+            RelayChatBackend if config.mode == 'relay' else LocalChatBackend
+        )
+        self.backend = backend_cls(
             config=config,
             on_message=self._on_network_message,
             on_status=self._set_status,
@@ -65,6 +68,8 @@ class ChatApp(App[None]):
         self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
         if self.config.mode == 'host':
             self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
+        elif self.config.mode == 'relay':
+            self.sub_title = f'Connected to relay {self.config.relay_url}'
         else:
             self.sub_title = (
                 f'Connected to {self.config.host}:{self.config.port}'
@@ -178,11 +183,23 @@ def parse_args() -> ChatConfig:
     join_parser.add_argument('--port', type=int, default=9000)
     join_parser.add_argument('--name', default='guest')
 
+    relay_parser = subparsers.add_parser(
+        'relay',
+        help='Join remote relay endpoint'
+    )
+    relay_parser.add_argument('--url', required=True)
+    relay_parser.add_argument('--name', default='guest')
+
     args = parser.parse_args()
 
     if args.mode == 'host':
         return ChatConfig(
             mode='host', username=args.name, host='127.0.0.1', port=args.port
+        )
+
+    if args.mode == 'relay':
+        return ChatConfig(
+            mode='relay', username=args.name, relay_url=args.url
         )
 
     return ChatConfig(
