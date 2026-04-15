@@ -58,6 +58,48 @@
       },
       "group": "build",
       "problemMatcher": []
+    },
+    {
+      "label": "Chat: Relay Endpoint (Alice)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/chat_tui.py",
+        "relay",
+        "--url",
+        "wss://ogham-chat.fastapicloud.dev/api/v1/ws",
+        "--name",
+        "alice"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "group": "relay-chat",
+        "focus": false,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: Relay Endpoint (Bob)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "${workspaceFolder}/chat_tui.py",
+        "relay",
+        "--url",
+        "wss://ogham-chat.fastapicloud.dev/api/v1/ws",
+        "--name",
+        "bob"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "group": "relay-chat",
+        "focus": false,
+        "clear": false
+      },
+      "problemMatcher": []
     }
   ]
 }
