@@ -7,12 +7,17 @@ Horizontal {
 }
 
 #contacts {
-    width: 24;
+    width: 1fr;
     height: 100%;
     background: $background;
     border: round $accent;
-    margin: 0 0 0 1;
+    margin: 0 1;
     padding: 0 1;
+}
+
+#contacts.has-peer {
+    width: 24;
+    margin: 0 0 0 1;
 }
 
 #contacts > .option-list--option {
@@ -21,6 +26,11 @@ Horizontal {
 
 #chat-column {
     height: 100%;
+    display: none;
+}
+
+#chat-column.has-peer {
+    display: block;
 }
 
 #chat {
@@ -58,4 +68,5 @@ Horizontal {
     color: $success;
     height: 1;
     margin: 0 1;
+    width: 100%;
 }

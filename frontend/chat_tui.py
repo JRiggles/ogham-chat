@@ -57,10 +57,10 @@ class ChatApp(App[None]):
             Vertical(
                 ChatLog(self_username=self.config.username, id='chat'),
                 ChatComposer('', id='composer'),
-                Static('', id='status'),
                 id='chat-column',
             ),
         )
+        yield Static('', id='status')
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -161,6 +161,7 @@ class ChatApp(App[None]):
         if not username or username == self.config.username:
             return
 
+        first_peer = self.active_peer is None
         if self.active_peer == username:
             return
 
@@ -168,6 +169,10 @@ class ChatApp(App[None]):
         self.query_one(
             '#chat', ChatLog
         ).border_title = f'Chatting with {username}'
+
+        if first_peer:
+            self.query_one('#contacts').add_class('has-peer')
+            self.query_one('#chat-column').add_class('has-peer')
 
     def _set_status(self, text: str) -> None:
         if self.shutting_down:
