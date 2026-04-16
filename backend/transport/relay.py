@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json
@@ -9,8 +11,8 @@ from uuid import uuid4
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from backend.models import ChatConfig
-from backend.types import ChatMessage
+from backend.core.config import ChatConfig
+from backend.core.message import ChatMessage
 
 
 class RelayChatBackend:
@@ -20,13 +22,16 @@ class RelayChatBackend:
         on_message: Callable[[ChatMessage], None],
         on_status: Callable[[str], None],
         on_typing: Callable[[str, bool], None],
+        on_user_list: Callable[[list[str]], None] | None = None,
     ) -> None:
         self.config = config
         self.on_message = on_message
         self.on_status = on_status
         self.on_typing = on_typing
-        self.websocket = None
-        self.read_task: asyncio.Task | None = None
+        self.on_user_list = on_user_list
+
+        self.websocket: websockets.ClientConnection | None = None
+        self.read_task: asyncio.Task[None] | None = None
         self.relay_url: str | None = None
         self.stopping = False
 
@@ -34,14 +39,19 @@ class RelayChatBackend:
         if not self.config.relay_url:
             raise ValueError('relay_url is required for relay mode')
 
-        self.relay_url = self._normalize_relay_url(self.config.relay_url)
+        self.relay_url = self._normalize_relay_url(
+            self.config.relay_url,
+            self.config.username,
+        )
         self.stopping = False
         self.on_status(f'Connecting to relay {self.relay_url}...')
+
         if self.read_task is None:
             self.read_task = asyncio.create_task(self._read_loop())
 
     async def stop(self) -> None:
         self.stopping = True
+
         if self.read_task is not None:
             self.read_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -50,33 +60,56 @@ class RelayChatBackend:
 
         await self._close_current_websocket()
 
-    async def send(self, text: str) -> None:
+    async def send(self, content: str, to: str | None = None) -> None:
         websocket = self.websocket
         if websocket is None:
             self.on_status('Not connected; waiting for relay reconnect...')
             return
 
+        recipient = (to or self.config.peer or '').strip()
+        if not recipient:
+            self.on_status('No recipient selected')
+            return
+
+        message = ChatMessage(
+            message_id=uuid4(),
+            sender=self.config.username,
+            to=recipient,
+            content=content,
+            created_at=datetime.now(UTC),
+            is_system=False,
+        )
+
         payload = {
-            'kind': 'message',
-            'sender': self.config.username,
-            'text': text,
+            'type': 'message',
+            'data': message.model_dump(mode='json'),
         }
+
         try:
             await websocket.send(json.dumps(payload))
+            self.on_message(message)
         except ConnectionClosed:
             self.on_status('Relay disconnected; reconnecting...')
             self.websocket = None
 
-    async def send_typing(self, active: bool) -> None:
+    async def send_typing(self, active: bool, to: str | None = None) -> None:
         websocket = self.websocket
         if websocket is None:
             return
 
+        recipient = (to or self.config.peer or '').strip()
+        if not recipient:
+            return
+
         payload = {
-            'kind': 'typing',
-            'sender': self.config.username,
-            'active': active,
+            'type': 'typing',
+            'data': {
+                'sender': self.config.username,
+                'to': recipient,
+                'active': active,
+            },
         }
+
         try:
             await websocket.send(json.dumps(payload))
         except ConnectionClosed:
@@ -128,34 +161,59 @@ class RelayChatBackend:
 
     def _handle_packet(self, packet: dict) -> None:
         packet_type = packet.get('type')
+
         if packet_type == 'system':
             data = packet.get('data', {})
-            message = data.get('message')
-            if isinstance(message, str) and message:
-                self.on_status(f'Relay: {message}')
+            if isinstance(data, dict):
+                message = data.get('message')
+                if isinstance(message, str) and message:
+                    self.on_status(f'Relay: {message}')
             return
 
-        data = packet.get('data', packet)
+        if packet_type == 'user_list':
+            data = packet.get('data')
+            if isinstance(data, dict):
+                users = data.get('users')
+                if isinstance(users, list) and self.on_user_list:
+                    self.on_user_list([u for u in users if isinstance(u, str)])
+            return
+
+        if packet_type == 'typing':
+            data = packet.get('data')
+            if not isinstance(data, dict):
+                return
+
+            sender = data.get('sender')
+            recipient = data.get('to')
+            active = bool(data.get('active', False))
+
+            if (
+                isinstance(sender, str)
+                and isinstance(recipient, str)
+                and recipient == self.config.username
+                and sender != self.config.username
+            ):
+                self.on_typing(sender, active)
+            return
+
+        if packet_type != 'message':
+            return
+
+        data = packet.get('data')
         if not isinstance(data, dict):
             return
 
-        kind = data.get('kind')
-        sender = data.get('sender') or data.get('name') or 'unknown'
+        message = ChatMessage.model_validate(data)
 
-        if kind == 'typing':
-            self.on_typing(str(sender), bool(data.get('active', False)))
+        # Ignore our own echoes if the server ever sends them back.
+        if message.sender == self.config.username:
             return
 
-        text = data.get('text')
-        if isinstance(text, str) and text:
-            message_data = {
-                'id': data.get('id', uuid4()),
-                'sender': str(sender),
-                'text': text,
-                'created_at': data.get('created_at', datetime.now(UTC)),
-                'is_system': bool(data.get('is_system', False)),
-            }
-            self.on_message(ChatMessage.model_validate(message_data))
+        # Ignore messages not addressed to us.
+        if message.to != self.config.username:
+            return
+
+        self.on_message(message)
 
     async def _close_current_websocket(self) -> None:
         websocket = self.websocket
@@ -164,16 +222,24 @@ class RelayChatBackend:
             with contextlib.suppress(ConnectionClosed, RuntimeError):
                 await websocket.close()
 
-    def _normalize_relay_url(self, relay_url: str) -> str:
+    def _normalize_relay_url(self, relay_url: str, username: str) -> str:
         parts = urlsplit(relay_url)
+
         match parts.scheme:
             case 'wss':
-                return relay_url
+                base = relay_url
             case 'https':
-                return urlunsplit(('wss', *parts[1:]))
+                base = urlunsplit(('wss', *parts[1:]))
             case 'http' | 'ws':
                 raise ValueError('Insecure relay URL scheme not allowed.')
             case _:
                 raise ValueError(
                     f'Unsupported relay URL scheme "{parts.scheme}"'
                 )
+
+        # Ensure the websocket path is user-specific: /ws/{user_id}
+        normalized = base.rstrip('/')
+        if normalized.endswith('/ws'):
+            return f'{normalized}/{username}'
+
+        return normalized

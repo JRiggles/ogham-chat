@@ -1,7 +1,7 @@
 import asyncio
-from dataclasses import dataclass
 from typing import cast
 
+from pydantic.dataclasses import dataclass
 from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
@@ -27,17 +27,16 @@ class EnterToSubmitMixin:
     async def on_key(self, event: events.Key) -> None:
         composer = cast(TextArea, self)
         match event.name:
-            case 'enter':
+            case "enter":
                 event.prevent_default()
                 event.stop()
                 composer.post_message(ChatComposerSubmit(composer.text))
-            case 'shift_enter':
+            case "shift_enter":
                 event.prevent_default()
                 event.stop()
-                composer.insert('\n')
+                composer.insert("\n")
             case _:
                 return
-
 
 
 class ChatComposer(EnterToSubmitMixin, TextArea):
@@ -49,6 +48,7 @@ class ChatComposer(EnterToSubmitMixin, TextArea):
 
     async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         del event
+
         active = bool(self.text.strip())
         if not active:
             self._typing_generation += 1
@@ -66,8 +66,10 @@ class ChatComposer(EnterToSubmitMixin, TextArea):
 
         self._typing_generation += 1
         generation = self._typing_generation
+
         if self._typing_idle_task is not None:
             self._typing_idle_task.cancel()
+
         self._typing_idle_task = asyncio.create_task(
             self._emit_idle_stop(generation)
         )

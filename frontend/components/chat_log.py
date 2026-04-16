@@ -3,14 +3,14 @@ import textwrap
 from rich.text import Text
 from textual.widgets import RichLog
 
-from backend.types import ChatMessage
+from backend.core.message import ChatMessage
 
 
 class ChatMessageRenderer:
     def __init__(
         self,
-        self_style: str = 'green',
-        peer_style: str = 'blue',
+        self_style: str = "green",
+        peer_style: str = "blue",
     ) -> None:
         self.self_style = self_style
         self.peer_style = peer_style
@@ -23,13 +23,13 @@ class ChatMessageRenderer:
 
         is_self = message.sender == self_username
         line_style = self.self_style if is_self else self.peer_style
-        header_style = f'bold dim {line_style} reverse'
-        name_style = f'bold {line_style} reverse'
+        header_style = f"bold dim {line_style} reverse"
+        name_style = f"bold {line_style} reverse"
         body_width = max(width, 1)
 
         rendered_lines: list[Text] = []
 
-        header = f' {message.sender} - {message.created_at.strftime("%H:%M:%S")} '
+        header = f" {message.sender} - {message.created_at.strftime('%H:%M:%S')} "
         rendered_header = Text(header, style=header_style)
         name_start = rendered_header.plain.find(message.sender)
         if name_start != -1:
@@ -40,12 +40,12 @@ class ChatMessageRenderer:
             )
         rendered_lines.append(rendered_header)
 
-        wrapped = self._wrap_preserving_newlines(message.text, body_width)
+        wrapped = self._wrap_preserving_newlines(message.content, body_width)
 
         for chunk in wrapped:
             rendered_lines.append(Text(chunk, style=line_style))
 
-        rendered_lines.append(Text(''))
+        rendered_lines.append(Text(""))
 
         return rendered_lines
 
@@ -54,15 +54,15 @@ class ChatMessageRenderer:
     ) -> list[Text]:
         system_width = max(width, 1)
         wrapped_system = self._wrap_preserving_newlines(
-            message.text, system_width
+            message.content, system_width
         )
-        rendered_system = [Text(line, style='dim') for line in wrapped_system]
-        rendered_system.append(Text(''))
+        rendered_system = [Text(line, style="dim") for line in wrapped_system]
+        rendered_system.append(Text(""))
         return rendered_system
 
     def _wrap_preserving_newlines(self, text: str, width: int) -> list[str]:
         wrapped_lines: list[str] = []
-        for raw_line in text.split('\n'):
+        for raw_line in text.split("\n"):
             wrapped_lines.extend(
                 textwrap.wrap(
                     raw_line,
@@ -72,7 +72,7 @@ class ChatMessageRenderer:
                     break_long_words=True,
                     break_on_hyphens=False,
                 )
-                or ['']
+                or [""]
             )
         return wrapped_lines
 
@@ -114,17 +114,20 @@ class ChatLog(RichLog):
     def rerender(self) -> None:
         width = max(self.size.width, 1)
         self.clear()
+
         for message in self.messages:
             for line in self.renderer.render(
-                message, width=width, self_username=self.self_username
+                message,
+                width=width,
+                self_username=self.self_username,
             ):
                 self.write(line)
 
         if self.typing_peers:
-            names = ', '.join(sorted(self.typing_peers))
+            names = ", ".join(sorted(self.typing_peers))
             suffix = (
-                'is typing...'
+                "is typing..."
                 if len(self.typing_peers) == 1
-                else 'are typing...'
+                else "are typing..."
             )
-            self.write(Text(f'{names} {suffix}', style='dim italic'))
+            self.write(Text(f"{names} {suffix}", style="dim italic"))
