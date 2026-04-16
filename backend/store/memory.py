@@ -3,9 +3,10 @@ from datetime import datetime
 from typing import Deque
 
 from backend.core.message import ChatMessage
+from backend.store.base import MessageStoreProtocol
 
 
-class MessageStore:
+class MemoryMessageStore(MessageStoreProtocol):
     def __init__(self, max_size: int = 10_000) -> None:
         self._messages: Deque[ChatMessage] = deque(maxlen=max_size)
 

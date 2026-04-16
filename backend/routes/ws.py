@@ -2,13 +2,13 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from backend.store.memory import MessageStore
+from backend.store.base import MessageStoreProtocol
 from backend.ws.manager import ConnectionManager
 
 
 def create_ws_router(
     ws_manager: ConnectionManager,
-    store: MessageStore,
+    store: MessageStoreProtocol,
 ) -> APIRouter:
     router = APIRouter()
 
