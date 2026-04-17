@@ -23,9 +23,17 @@ class ChatMessageRow(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
+def _normalize_database_url(database_url: str) -> str:
+    if database_url.startswith(('postgres://', 'postgresql://')):
+        suffix = database_url.split('://', 1)[1]
+        return f'postgresql+psycopg://{suffix}'
+    return database_url
+
+
 class SQLMessageStore:
     def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+        normalized_db_url = _normalize_database_url(database_url)
+        self.engine = create_engine(normalized_db_url, pool_pre_ping=True)
         SQLModel.metadata.create_all(self.engine)
 
     def add(self, message: ChatMessage) -> None:
