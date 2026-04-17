@@ -9,7 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import websockets
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from backend.core.config import ChatConfig
 from backend.core.message import ChatMessage
@@ -126,6 +126,7 @@ class RelayChatBackend:
                 ping_timeout=10,
                 close_timeout=5,
                 open_timeout=10,
+                process_exception=self._process_connect_exception,
             ):
                 if self.stopping:
                     await websocket.close()
@@ -158,6 +159,35 @@ class RelayChatBackend:
         except Exception as exc:
             if not self.stopping:
                 self.on_status(f'Relay fatal error: {exc}')
+
+    def _process_connect_exception(self, exc: Exception) -> Exception | None:
+        # Retry common transient/proxy-origin errors instead of treating them as fatal.
+        if isinstance(exc, InvalidStatus):
+            status_code = getattr(exc, 'status_code', None)
+            if status_code is None:
+                response = getattr(exc, 'response', None)
+                status_code = getattr(response, 'status_code', None)
+
+            if status_code in {
+                429,
+                500,
+                502,
+                503,
+                504,
+                520,
+                521,
+                522,
+                523,
+                524,
+                525,
+                526,
+            }:
+                self.on_status(
+                    f'Relay handshake failed (HTTP {status_code}); retrying...'
+                )
+                return None
+
+        return exc
 
     def _handle_packet(self, packet: dict) -> None:
         packet_type = packet.get('type')
