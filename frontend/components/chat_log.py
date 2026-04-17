@@ -95,6 +95,10 @@ class ChatLog(RichLog):
         self.messages.append(message)
         self.rerender()
 
+    def set_messages(self, messages: list[ChatMessage]) -> None:
+        self.messages = list(messages)
+        self.rerender()
+
     def set_message_styles(self, self_style: str, peer_style: str) -> None:
         self.renderer.self_style = self_style
         self.renderer.peer_style = peer_style

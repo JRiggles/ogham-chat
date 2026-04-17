@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, or_
 from sqlmodel import Field, Session, SQLModel, col, create_engine, select
 
 from backend.core.message import ChatMessage
@@ -28,6 +28,12 @@ def _normalize_database_url(database_url: str) -> str:
         suffix = database_url.split('://', 1)[1]
         return f'postgresql+psycopg://{suffix}'
     return database_url
+
+
+def _normalize_timestamp(created_at: datetime) -> datetime:
+    if created_at.tzinfo is None:
+        return created_at.replace(tzinfo=UTC)
+    return created_at.astimezone(UTC)
 
 
 class SQLMessageStore:
@@ -72,7 +78,45 @@ class SQLMessageStore:
                 sender=row.sender,
                 to=row.recipient,
                 content=row.content,
-                created_at=row.created_at,
+                created_at=_normalize_timestamp(row.created_at),
+                is_system=row.is_system,
+                metadata=row.metadata_json,
+            )
+            for row in rows
+        ]
+
+    def get_conversation(
+        self,
+        user_id: str,
+        peer_id: str,
+        after: datetime | None = None,
+    ) -> list[ChatMessage]:
+        statement = select(ChatMessageRow).where(
+            or_(
+                (
+                    (col(ChatMessageRow.sender) == user_id)
+                    & (col(ChatMessageRow.recipient) == peer_id)
+                ),
+                (
+                    (col(ChatMessageRow.sender) == peer_id)
+                    & (col(ChatMessageRow.recipient) == user_id)
+                ),
+            )
+        )
+        if after is not None:
+            statement = statement.where(ChatMessageRow.created_at > after)
+        statement = statement.order_by(col(ChatMessageRow.created_at))
+
+        with Session(self.engine) as session:
+            rows = session.exec(statement).all()
+
+        return [
+            ChatMessage(
+                message_id=row.message_id,
+                sender=row.sender,
+                to=row.recipient,
+                content=row.content,
+                created_at=_normalize_timestamp(row.created_at),
                 is_system=row.is_system,
                 metadata=row.metadata_json,
             )

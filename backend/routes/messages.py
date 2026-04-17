@@ -34,4 +34,16 @@ def create_messages_router(
     ) -> list[ChatMessage]:
         return store.get_for_user_after(user_id=user_id, after=after)
 
+    @router.get('/messages/conversation', response_model=list[ChatMessage])
+    async def get_conversation(
+        user_id: str,
+        peer_id: str,
+        after: datetime | None = Query(default=None),
+    ) -> list[ChatMessage]:
+        return store.get_conversation(
+            user_id=user_id,
+            peer_id=peer_id,
+            after=after,
+        )
+
     return router

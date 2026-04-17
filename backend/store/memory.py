@@ -27,3 +27,22 @@ class MemoryMessageStore(MessageStoreProtocol):
                 continue
             results.append(message)
         return results
+
+    def get_conversation(
+        self,
+        user_id: str,
+        peer_id: str,
+        after: datetime | None = None,
+    ) -> list[ChatMessage]:
+        results: list[ChatMessage] = []
+        for message in self._messages:
+            is_conversation_message = (
+                (message.sender == user_id and message.to == peer_id)
+                or (message.sender == peer_id and message.to == user_id)
+            )
+            if not is_conversation_message:
+                continue
+            if after is not None and message.created_at <= after:
+                continue
+            results.append(message)
+        return results

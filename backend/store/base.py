@@ -12,3 +12,10 @@ class MessageStoreProtocol(Protocol):
     def get_for_user_after(
         self, user_id: str, after: datetime | None = None
     ) -> list[ChatMessage]: ...
+
+    def get_conversation(
+        self,
+        user_id: str,
+        peer_id: str,
+        after: datetime | None = None,
+    ) -> list[ChatMessage]: ...
