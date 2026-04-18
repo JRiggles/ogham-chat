@@ -1,6 +1,8 @@
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
+from fastapi.responses import HTMLResponse
 
 from backend.routes.health import router as health_router
 from backend.routes.messages import create_messages_router
@@ -23,3 +25,14 @@ v1.include_router(create_messages_router(ws_manager, store))
 v1.include_router(create_ws_router(ws_manager, store))
 
 app.include_router(v1)
+
+_LANDING_PATH = (
+    Path(__file__).resolve().parent / "backend" / "static" / "landing.html"
+)
+_LANDING_HTML = _LANDING_PATH.read_text(encoding="utf-8")
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def landing_page() -> str:
+    """Serve the landing page at the application root."""
+    return _LANDING_HTML
