@@ -48,6 +48,7 @@ class ChatApp(App[None]):
     BINDINGS = [
         Binding('ctrl+c', 'quit', 'Quit'),
         Binding('ctrl+r', 'refresh', 'Refresh', show=False),
+        Binding('escape', 'clear_system_messages', 'Clear system', show=False),
     ]
 
     def __init__(self, config: ChatConfig) -> None:
@@ -177,6 +178,29 @@ class ChatApp(App[None]):
             self.query_one('#composer', ChatComposer).focus()
         finally:
             self.refresh_in_flight = False
+
+    async def action_clear_system_messages(self) -> None:
+        """Clear system messages from the currently visible conversation."""
+        if self.shutting_down:
+            return
+
+        chat = self.query_one('#chat', ChatLog)
+        removed = 0
+
+        if self.active_peer:
+            conversation = self.conversations.get(self.active_peer, [])
+            filtered = [m for m in conversation if not m.is_system]
+            removed = len(conversation) - len(filtered)
+            if removed:
+                self.conversations[self.active_peer] = filtered
+                chat.set_messages(filtered)
+        else:
+            removed = chat.clear_system_messages()
+
+        if removed:
+            self._set_status(f'Cleared {removed} system message(s)')
+        else:
+            self._set_status('No system messages to clear')
 
     async def on_chat_composer_submit(
         self, message: ChatComposerSubmit

@@ -229,6 +229,17 @@ class ChatLog(RichLog):
 
         self.rerender()
 
+    def clear_system_messages(self) -> int:
+        """Remove system messages from the current view and re-render."""
+        original_count = len(self.messages)
+        self.messages = [
+            message for message in self.messages if not message.is_system
+        ]
+        removed_count = original_count - len(self.messages)
+        if removed_count:
+            self.rerender()
+        return removed_count
+
     def rerender(self) -> None:
         """Repaint all messages and any active typing indicator line."""
         width = max(self.size.width, 1)

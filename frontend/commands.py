@@ -13,12 +13,19 @@ CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
     'clear',
     'chat',
     'status',
+    'quit',
 )
 
 SLASH_COMMAND_ALIASES: dict[str, str] = {
     '?': 'help',
+    'r': 'refresh',
+    'c': 'clear',
+    'cls': 'clear',
     'dm': 'chat',
     'peer': 'chat',
+    's': 'status',
+    'q': 'quit',
+    'exit': 'quit',
 }
 
 ALL_SLASH_COMMANDS: tuple[str, ...] = tuple(
@@ -59,17 +66,26 @@ class SlashCommandHost(Protocol):
         """Refresh chat history through the application's refresh action."""
         ...
 
+    async def action_quit(self) -> None:
+        """Close the application."""
+        ...
+
 
 HELP_TEXT = '\n'.join(
     [
         '__Slash commands:__',
-        '**/help** - Show available commands',
-        '**/refresh** - Refresh history now',
-        '**/clear** - Clear current conversation from local view',
+        '**/help** (**/?**) - Show available commands',
+        '**/refresh** (**/r**) - Refresh history now',
+        '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
-        '**/chat <username>** - Switch active chat target',
-        '**/status** - Show current chat status',
+        '**/chat <username>** (**/dm**, **/peer**) - Switch active chat target',
+        '**/status** (**/s**) - Show current chat status',
+        '**/quit** (**/q**, **/exit**) - Quit app',
+        '  (confirm with **/quit confirm|yes|y**)',
+        '',
         '**//message** - Send text that starts with a slash',
+        '',
+        '**Esc** - Clear system messages like this one',
         '',
         '__Message formatting:__',
         r'\**bold\** - **Bold** text',
@@ -80,9 +96,15 @@ HELP_TEXT = '\n'.join(
         '',
         r'Escape formatting markers with "\"',
         r'\\*like this\\* → \*like this\*',
-        r'\\* \\! \\__ \\~~ \\!'
+        r'\\* \\! \\__ \\~~ \\!',
+        '',
     ]
 )
+
+
+def _write_system_output(host: SlashCommandHost, text: str) -> None:
+    """Write slash-command output with a guaranteed trailing newline."""
+    host._write_system_message(text if text.endswith('\n') else f'{text}\n')
 
 
 def slash_command_completions(prefix: str) -> list[str]:
@@ -119,7 +141,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
     canonical_name = SLASH_COMMAND_ALIASES.get(command.name, command.name)
 
     if canonical_name == 'help':
-        host._write_system_message(HELP_TEXT)
+        _write_system_output(host, HELP_TEXT)
         host._set_status('Slash command help')
         return True
 
@@ -133,8 +155,8 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             host.seen_messages.clear()
             chat = host.query_one('#chat', ChatLog)
             chat.set_messages([])
-            host._write_system_message(
-                'Cleared all local conversation history'
+            _write_system_output(
+                host, 'Cleared all local conversation history'
             )
             host._set_status('Cleared local history')
             return True
@@ -146,8 +168,8 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
         host.conversations[host.active_peer] = []
         chat = host.query_one('#chat', ChatLog)
         chat.set_messages([])
-        host._write_system_message(
-            f'Cleared local conversation with {host.active_peer}'
+        _write_system_output(
+            host, f'Cleared local conversation with {host.active_peer}'
         )
         host._set_status(f'Cleared local conversation with {host.active_peer}')
         return True
@@ -164,18 +186,35 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
 
         host._set_active_peer(username)
         await host._load_conversation(username)
-        host._set_status(f'Active peer set to {username}')
+        host._set_status(f'Now chatting with {username}')
         return True
 
     if canonical_name == 'status':
-        active_peer = host.active_peer or '(none)'
-        host._write_system_message(
+        current_chat = host.active_peer or '(none)'
+        _write_system_output(
+            host,
             'Status:\n'
-            f'- Active peer: {active_peer}\n'
+            f'- Current chat: {current_chat}\n'
             f'- Known contacts: {len(host.known_contacts)}\n'
-            f'- Online users: {len(host.online_users)}'
+            f'- Online users: {len(host.online_users)}',
         )
         host._set_status('Displayed chat status')
+        return True
+
+    if canonical_name == 'quit':
+        confirmed = bool(command.args) and command.args[0].lower() in {
+            'confirm',
+            'yes',
+            'y',
+        }
+        if not confirmed:
+            _write_system_output(
+                host, 'Confirm quit with /quit confirm (aliases: /q, /exit)'
+            )
+            host._set_status('Quit requires confirmation: /quit confirm|yes|y')
+            return True
+
+        await host.action_quit()
         return True
 
     host._set_status(f'Unknown slash command: /{command.name} (try /help)')
