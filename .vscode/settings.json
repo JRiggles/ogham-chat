@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^/Users/jriggles/Documents/GitHub/ogham-chat/\\.venv/bin/ruff check frontend/components/composer\\.py frontend/chat_tui\\.py frontend/commands\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
