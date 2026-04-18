@@ -2,6 +2,12 @@
 
 Minimal in-terminal chat app built with Textual.
 
+## Screenshots
+
+![Ogham Chat](screenshots/Ogham%20Chat.png)
+
+![Slash Commands](screenshots/Slash%20Commands.png)
+
 ## Setup
 
 ```bash
