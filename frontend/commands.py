@@ -62,14 +62,25 @@ class SlashCommandHost(Protocol):
 
 HELP_TEXT = '\n'.join(
     [
-        'Slash commands:',
-        '/help - Show available commands',
-        '/refresh - Refresh history now',
-        '/clear - Clear current conversation from local view',
-        '/clear all - Clear all local conversation history',
-        '/chat <username> - Switch active chat target',
-        '/status - Show current chat status',
-        '//message - Send text that starts with a slash',
+        '__Slash commands:__',
+        '**/help** - Show available commands',
+        '**/refresh** - Refresh history now',
+        '**/clear** - Clear current conversation from local view',
+        '**/clear all** - Clear all local conversation history',
+        '**/chat <username>** - Switch active chat target',
+        '**/status** - Show current chat status',
+        '**//message** - Send text that starts with a slash',
+        '',
+        '__Message formatting:__',
+        r'\**bold\** - **Bold** text',
+        r'\*italic\* - *Italic* text',
+        r'\__underline\__ - __Underlined__ text',
+        r'\~~strike\~~ - ~~Struck-through~~ text',
+        r'\!highlight\! - Highlight important text',
+        '',
+        r'Escape formatting markers with "\"',
+        r'\\*like this\\* → \*like this\*',
+        r'\\* \\! \\__ \\~~ \\!'
     ]
 )
 

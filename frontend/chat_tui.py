@@ -113,9 +113,13 @@ class ChatApp(App[None]):
 
         theme = self.get_theme(self.theme)
         if theme is None:
-            chat.set_message_styles('green', 'blue')
+            chat.set_message_styles('green', 'blue', 'white')
         else:
-            chat.set_message_styles(str(theme.primary), str(theme.success))
+            chat.set_message_styles(
+                str(theme.primary),
+                str(theme.success),
+                str(theme.foreground),
+            )
 
         self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
         if self.config.mode == 'host':

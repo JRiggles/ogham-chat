@@ -1,6 +1,9 @@
+import re
 import textwrap
 from datetime import UTC, datetime
 
+from rich.console import Console
+from rich.markup import escape
 from rich.text import Text
 from textual.widgets import RichLog
 
@@ -10,26 +13,45 @@ from backend.core.message import ChatMessage
 class ChatMessageRenderer:
     """Render chat messages into styled Rich text lines for the chat log."""
 
+    ESCAPABLE_MARKERS: tuple[str, ...] = ('**', '__', '~~', '*', '!')
+
+    INLINE_STYLES: tuple[tuple[re.Pattern[str], str], ...] = (
+        (re.compile(r'\*\*(.+?)\*\*', re.DOTALL), 'bold'),
+        (re.compile(r'__(.+?)__', re.DOTALL), 'underline'),
+        (re.compile(r'~~(.+?)~~', re.DOTALL), 'strike'),
+        (
+            re.compile(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', re.DOTALL),
+            'italic',
+        ),
+    )
+    HIGHLIGHT_PATTERN = re.compile(r'(?<!\!)!([^!\n]+?)!(?!\!)', re.DOTALL)
+
     def __init__(
         self,
         self_style: str = 'green',
         peer_style: str = 'blue',
+        foreground: str = 'white',
     ) -> None:
         """Configure styles for local-user and peer message rendering."""
         self.self_style = self_style
         self.peer_style = peer_style
+        self.foreground = foreground
 
     def render(
-        self, message: ChatMessage, width: int, self_username: str
+        self,
+        message: ChatMessage,
+        width: int,
+        self_username: str,
+        console: Console,
     ) -> list[Text]:
         """Render one chat message into display-ready Rich text lines."""
         if message.is_system:
-            return self._render_system_message(message, width)
+            return self._render_system_message(message, width, console)
 
         is_self = message.sender == self_username
         line_style = self.self_style if is_self else self.peer_style
-        header_style = f'bold dim {line_style} reverse'
-        name_style = f'bold {line_style} reverse'
+        header_style = f'bold {self.foreground} on {line_style}'
+        name_style = f'bold {self.foreground} on {line_style}'
         body_width = max(width, 1)
 
         rendered_lines: list[Text] = []
@@ -49,26 +71,86 @@ class ChatMessageRenderer:
             )
         rendered_lines.append(rendered_header)
 
-        wrapped = self._wrap_preserving_newlines(message.content, body_width)
-
-        for chunk in wrapped:
-            rendered_lines.append(Text(chunk, style=line_style))
+        rendered_lines.extend(
+            self._render_formatted_lines(
+                message.content,
+                body_width,
+                line_style,
+                console,
+                highlight_style=f'bold {self.foreground} on {line_style}',
+            )
+        )
 
         rendered_lines.append(Text(''))
 
         return rendered_lines
 
     def _render_system_message(
-        self, message: ChatMessage, width: int
+        self, message: ChatMessage, width: int, console: Console
     ) -> list[Text]:
         """Render one system message with dimmed styling."""
-        system_width = max(width, 1)
-        wrapped_system = self._wrap_preserving_newlines(
-            message.content, system_width
+        return self._render_formatted_lines(
+            message.content,
+            max(width, 1),
+            'dim',
+            console,
+            highlight_style='bold',
         )
-        rendered_system = [Text(line, style='dim') for line in wrapped_system]
-        rendered_system.append(Text(''))
-        return rendered_system
+
+    def _render_formatted_lines(
+        self,
+        content: str,
+        width: int,
+        base_style: str,
+        console: Console,
+        highlight_style: str,
+    ) -> list[Text]:
+        """Render wrapped text lines while preserving inline formatting spans."""
+        rendered_lines: list[Text] = []
+        for raw_line in content.split('\n'):
+            formatted = self._render_inline_markup(
+                raw_line,
+                base_style,
+                highlight_style,
+            )
+            rendered_lines.extend(
+                formatted.wrap(console, max(width, 1))
+                or [Text('', style=base_style)]
+            )
+        return rendered_lines
+
+    def _render_inline_markup(
+        self,
+        text: str,
+        base_style: str,
+        highlight_style: str,
+    ) -> Text:
+        """Parse a small markdown-like inline syntax into Rich text spans."""
+        protected_text, replacements = self._protect_escaped_markers(text)
+        markup = escape(protected_text)
+        for pattern, rich_style in self.INLINE_STYLES:
+            markup = pattern.sub(rf'[{rich_style}]\1[/]', markup)
+        markup = self.HIGHLIGHT_PATTERN.sub(
+            lambda match: f'[{highlight_style}]{match.group(1)}[/]',
+            markup,
+        )
+        for token, marker in replacements.items():
+            markup = markup.replace(token, marker)
+        return Text.from_markup(markup, style=base_style)
+
+    @classmethod
+    def _protect_escaped_markers(cls, text: str) -> tuple[str, dict[str, str]]:
+        """Replace escaped formatting markers with placeholders.
+
+        This preserves literal marker text through subsequent regex parsing.
+        """
+        replacements: dict[str, str] = {}
+        protected = text
+        for index, marker in enumerate(cls.ESCAPABLE_MARKERS):
+            token = f'\x00ESCAPED_MARKER_{index}\x00'
+            protected = protected.replace(f'\\{marker}', token)
+            replacements[token] = marker
+        return protected, replacements
 
     def _wrap_preserving_newlines(self, text: str, width: int) -> list[str]:
         """Wrap text to width while preserving explicit newline boundaries."""
@@ -122,10 +204,17 @@ class ChatLog(RichLog):
         self.messages = list(messages)
         self.rerender()
 
-    def set_message_styles(self, self_style: str, peer_style: str) -> None:
+    def set_message_styles(
+        self,
+        self_style: str,
+        peer_style: str,
+        foreground: str | None = None,
+    ) -> None:
         """Update message color styles and re-render."""
         self.renderer.self_style = self_style
         self.renderer.peer_style = peer_style
+        if foreground is not None:
+            self.renderer.foreground = foreground
         self.rerender()
 
     def set_peer_typing(self, username: str, active: bool) -> None:
@@ -150,6 +239,7 @@ class ChatLog(RichLog):
                 message,
                 width=width,
                 self_username=self.self_username,
+                console=self.app.console,
             ):
                 self.write(line)
 
