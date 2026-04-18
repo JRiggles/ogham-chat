@@ -35,6 +35,34 @@ from frontend.components.contact_list import ContactList, ContactSelected
 from frontend.components.status_footer import StatusFooter
 
 
+MESSAGE_MAX_LENGTH = 4096
+
+
+def _split_message(
+    text: str, max_length: int = MESSAGE_MAX_LENGTH
+) -> list[tuple[str, bool]]:
+    """Split text on word boundaries into (chunk, is_continuation) pairs.
+
+    Chunks are at most max_length characters. Splitting prefers the last
+    whitespace boundary within the limit; words longer than max_length are
+    hard-cut as a fallback.
+    """
+    chunks: list[tuple[str, bool]] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append((remaining, bool(chunks)))
+            break
+        # Find the last whitespace within the allowed window.
+        boundary = remaining.rfind(' ', 0, max_length)
+        if boundary <= 0:
+            # No suitable boundary; hard-cut at the limit.
+            boundary = max_length
+        chunks.append((remaining[:boundary], bool(chunks)))
+        remaining = remaining[boundary:].lstrip(' ')
+    return chunks
+
+
 class ChatApp(App[None]):
     """Textual chat application orchestrating backend events and UI state."""
 
@@ -224,7 +252,9 @@ class ChatApp(App[None]):
                     await self.backend.send_typing(False, to=self.active_peer)
                     return
 
-        await self.backend.send(content, to=self.active_peer)
+        for chunk, is_continuation in _split_message(content):
+            meta = {'continuation': True} if is_continuation else None
+            await self.backend.send(chunk, to=self.active_peer, metadata=meta)
         await self.backend.send_typing(False, to=self.active_peer)
 
     async def on_chat_composer_typing(

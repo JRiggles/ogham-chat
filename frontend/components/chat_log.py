@@ -70,6 +70,8 @@ class ChatMessageRenderer:
                 name_start + len(message.sender),
             )
         rendered_lines.append(rendered_header)
+        if message.metadata and message.metadata.get('continuation'):
+            rendered_lines.append(Text(" ↪ cont'd", style='italic dim'))
 
         rendered_lines.extend(
             self._render_formatted_lines(

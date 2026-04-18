@@ -72,12 +72,13 @@ class RelayChatBackend:
 
         await self._close_current_websocket()
 
-    async def send(self, content: str, to: str | None = None) -> None:
+    async def send(self, content: str, to: str | None = None, metadata: dict | None = None) -> None:
         """Send a chat message to one recipient through the relay.
 
         Args:
             content: Message text to send.
             to: Explicit recipient user id. Falls back to configured peer.
+            metadata: Optional metadata dict attached to the message.
         """
         websocket = self.websocket
         if websocket is None:
@@ -96,6 +97,7 @@ class RelayChatBackend:
             content=content,
             created_at=datetime.now(UTC),
             is_system=False,
+            metadata=metadata,
         )
 
         payload = {

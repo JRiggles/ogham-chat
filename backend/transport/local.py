@@ -82,7 +82,7 @@ class LocalChatBackend:
 
     # ── sending ────────────────────────────────────────────────
 
-    async def send(self, content: str, to: str | None = None) -> None:
+    async def send(self, content: str, to: str | None = None, metadata: dict | None = None) -> None:
         """Send one chat message to connected peers or host server."""
         if not self.running:
             self.on_status('Local backend is not running')
@@ -100,6 +100,7 @@ class LocalChatBackend:
             content=content,
             created_at=datetime.now(UTC),
             is_system=False,
+            metadata=metadata,
         )
 
         payload = json.dumps(
