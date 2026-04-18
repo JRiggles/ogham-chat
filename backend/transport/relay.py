@@ -72,7 +72,9 @@ class RelayChatBackend:
 
         await self._close_current_websocket()
 
-    async def send(self, content: str, to: str | None = None, metadata: dict | None = None) -> None:
+    async def send(
+        self, content: str, to: str | None = None, metadata: dict | None = None
+    ) -> None:
         """Send a chat message to one recipient through the relay.
 
         Args:

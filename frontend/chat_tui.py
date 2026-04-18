@@ -34,7 +34,6 @@ from frontend.components.composer import (
 from frontend.components.contact_list import ContactList, ContactSelected
 from frontend.components.status_footer import StatusFooter
 
-
 MESSAGE_MAX_LENGTH = 4096
 
 
