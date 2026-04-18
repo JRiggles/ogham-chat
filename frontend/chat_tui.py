@@ -23,7 +23,12 @@ from backend import (
 from backend.core.message import ChatMessage
 from frontend.assets.style.theme import NOSTALGOS_12
 from frontend.cli import parse_args
-from frontend.commands import SlashCommandHost, dispatch_slash_command
+from frontend.commands import (
+    ContactCommandActions,
+    ContactGroupCommandActions,
+    SlashCommandHost,
+    dispatch_slash_command,
+)
 from frontend.components.chat_log import ChatLog
 from frontend.components.composer import (
     ChatComposer,
@@ -33,6 +38,7 @@ from frontend.components.composer import (
 )
 from frontend.components.contact_list import ContactList, ContactSelected
 from frontend.components.status_footer import StatusFooter
+from frontend.contact_groups import ContactGroupManager
 
 MESSAGE_MAX_LENGTH = 4096
 
@@ -87,6 +93,15 @@ class ChatApp(App[None]):
         self.seen_messages: set[UUID] = set()
         self.online_users: set[str] = set()
         self.known_contacts: set[str] = set()
+        self.contact_group_manager = ContactGroupManager()
+        self.group_commands = ContactGroupCommandActions(
+            manager=self.contact_group_manager,
+            on_groups_changed=self._on_contact_groups_changed,
+        )
+        self.contact_commands = ContactCommandActions(
+            manager=self.contact_group_manager,
+            on_contacts_changed=self._on_contact_groups_changed,
+        )
         self.conversations: dict[str, list[ChatMessage]] = defaultdict(list)
         self.last_sync_at: datetime | None = None
         self.history_client: RelayHistoryClient | None = None
@@ -126,6 +141,8 @@ class ChatApp(App[None]):
         """Start backend services and initialize UI defaults on startup."""
         self.register_theme(NOSTALGOS_12)
         self.theme = 'nostalgos-12'
+        self.contact_group_manager.load()
+        self.known_contacts.update(self.contact_group_manager.contacts())
 
         await self.backend.start()
 
@@ -393,15 +410,28 @@ class ChatApp(App[None]):
         if not username or username == self.config.username:
             return
         self.known_contacts.add(username)
+        self.contact_group_manager.ensure_contact(username)
         self._refresh_contacts()
 
     def _refresh_contacts(self) -> None:
         """Render the current union of known and online contacts."""
         if self.shutting_down:
             return
-        users = sorted(self.known_contacts | self.online_users)
-        self.query_one('#contacts', ContactList).update_users(users)
+        users = sorted(
+            (self.known_contacts | self.online_users)
+            | self.contact_group_manager.contacts()
+        )
+        self.query_one('#contacts', ContactList).update_users(
+            users,
+            self.online_users,
+            self.contact_group_manager.groups_by_user,
+        )
         self.query_one('#composer', ChatComposer).set_chat_targets(users)
+
+    def _on_contact_groups_changed(self) -> None:
+        """Refresh local contact state after group membership changes."""
+        self.known_contacts.update(self.contact_group_manager.contacts())
+        self._refresh_contacts()
 
     def _peer_for_message(self, message: ChatMessage) -> str:
         """Return the conversation peer key for a message."""

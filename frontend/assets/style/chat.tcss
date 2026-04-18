@@ -23,11 +23,16 @@ Horizontal {
 }
 
 #contacts.has-peer {
-    width: 24;
+    width: 32;
 }
 
-#contacts > .option-list--option {
+#contacts .tree__label {
     padding: 0 1;
+}
+
+#contacts .tree--cursor {
+    background: $panel;
+    color: $foreground;
 }
 
 #chat-column {

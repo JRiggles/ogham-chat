@@ -26,6 +26,32 @@ python main.py join --host 127.0.0.1 --port 9000 --name bob
 
 Both terminals can send messages by typing and pressing Enter.
 
+## Contact Tree and Groups
+
+The contacts sidebar now uses a tree with two root sections:
+
+- Online
+- Offline
+
+Uncategorized contacts appear directly under Online or Offline.
+
+You can manage one-level groups with slash commands:
+
+```text
+/group add <username> <group>
+/group remove <username> <group>
+/group delete <group>
+/group list [username]
+```
+
+Groups are mirrored under both Online and Offline branches, so the same group name can show online and offline members separately.
+
+Group assignments persist locally at:
+
+```text
+~/.ogham-chat/contact_groups.json
+```
+
 ## Docstring linting
 
 This project enforces Google-style function/class docstrings with Ruff.
