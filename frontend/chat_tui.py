@@ -4,6 +4,7 @@ import contextlib
 import re
 from collections import defaultdict
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
 from textual import events
@@ -21,8 +22,10 @@ from backend import (
 from backend.core.message import ChatMessage
 from frontend.assets.style.theme import NOSTALGOS_12
 from frontend.cli import parse_args
+from frontend.commands import SlashCommandHost, dispatch_slash_command
 from frontend.components.chat_log import ChatLog
 from frontend.components.composer import (
+    ChatComposerAutocomplete,
     ChatComposer,
     ChatComposerSubmit,
     ChatComposerTyping,
@@ -32,7 +35,7 @@ from frontend.components.contact_list import ContactList, ContactSelected
 
 class ChatApp(App[None]):
     """Textual chat application orchestrating backend events and UI state."""
-
+    ENABLE_COMMAND_PALETTE = False
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     REFRESH_UI_MIN_SECONDS = 0.5
     TITLE = 'Ogham Chat'
@@ -180,6 +183,17 @@ class ChatApp(App[None]):
         if not content:
             return
 
+        if content.startswith('/'):
+            # Allow sending a literal slash-prefixed message with //...
+            if content.startswith('//'):
+                content = content[1:]
+            else:
+                host = cast(SlashCommandHost, self)
+                handled = await dispatch_slash_command(host, content)
+                if handled:
+                    await self.backend.send_typing(False, to=self.active_peer)
+                    return
+
         await self.backend.send(content, to=self.active_peer)
         await self.backend.send_typing(False, to=self.active_peer)
 
@@ -188,6 +202,12 @@ class ChatApp(App[None]):
     ) -> None:
         """Forward local typing-state changes to the backend transport."""
         await self.backend.send_typing(message.active, to=self.active_peer)
+
+    def on_chat_composer_autocomplete(
+        self, message: ChatComposerAutocomplete
+    ) -> None:
+        """Surface slash-autocomplete hints in the status bar."""
+        self._set_status(message.text)
 
     async def on_contact_selected(self, message: ContactSelected) -> None:
         """Switch active conversation when a contact is selected."""
@@ -307,6 +327,7 @@ class ChatApp(App[None]):
             return
         users = sorted(self.known_contacts | self.online_users)
         self.query_one('#contacts', ContactList).update_users(users)
+        self.query_one('#composer', ChatComposer).set_chat_targets(users)
 
     def _peer_for_message(self, message: ChatMessage) -> str:
         """Return the conversation peer key for a message."""
