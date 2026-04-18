@@ -9,6 +9,13 @@ class MessageStoreProtocol(Protocol):
 
     def get_for_user(self, user_id: str) -> list[ChatMessage]: ...
 
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 180,
+        now: datetime | None = None,
+    ) -> int: ...
+
     def get_for_user_after(
         self, user_id: str, after: datetime | None = None
     ) -> list[ChatMessage]: ...

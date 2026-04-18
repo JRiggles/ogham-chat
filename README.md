@@ -41,3 +41,27 @@ Terminal 2:
 ```bash
 python main.py relay --url "wss://ogham-chat.fastapicloud.dev/api/v1/ws" --name bob
 ```
+
+## Retention cleanup job
+
+If you are storing chat history in Supabase/Postgres, the app now includes both a manual cleanup command and a database-native scheduled job for expired rows.
+
+Apply the scheduler in the Supabase SQL editor:
+
+```sql
+-- run ops/supabase/purge_expired_chat_messages.sql
+```
+
+That script creates `public.purge_expired_chat_messages(interval)` and schedules it with `pg_cron` to run daily at `00:05 UTC`, deleting rows from `chat_messages` older than 180 days.
+
+You can run the same purge manually against the configured database:
+
+```bash
+DATABASE_URL=postgresql://... python -m backend.maintenance purge-expired
+```
+
+To keep a different retention window for a one-off run:
+
+```bash
+DATABASE_URL=postgresql://... python -m backend.maintenance purge-expired --retention-days 90
+```

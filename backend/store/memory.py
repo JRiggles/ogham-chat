@@ -1,5 +1,5 @@
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Deque
 
 from backend.core.message import ChatMessage
@@ -12,6 +12,31 @@ class MemoryMessageStore(MessageStoreProtocol):
 
     def add(self, message: ChatMessage) -> None:
         self._messages.append(message)
+
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 180,
+        now: datetime | None = None,
+    ) -> int:
+        effective_now = self._normalize_timestamp(now or datetime.now(UTC))
+        cutoff = effective_now - timedelta(days=retention_days)
+        remaining_messages = deque(
+            (
+                message
+                for message in self._messages
+                if self._normalize_timestamp(message.created_at) > cutoff
+            ),
+            maxlen=self._messages.maxlen,
+        )
+        deleted_count = len(self._messages) - len(remaining_messages)
+        self._messages = remaining_messages
+        return deleted_count
+
+    def _normalize_timestamp(self, created_at: datetime) -> datetime:
+        if created_at.tzinfo is None:
+            return created_at.replace(tzinfo=UTC)
+        return created_at.astimezone(UTC)
 
     def get_for_user(self, user_id: str) -> list[ChatMessage]:
         return [m for m in self._messages if m.to == user_id]

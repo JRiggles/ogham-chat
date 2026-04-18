@@ -1,8 +1,8 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Column, or_
+from sqlalchemy import JSON, Column, delete, func, or_
 from sqlmodel import Field, Session, SQLModel, col, create_engine, select
 
 from backend.core.message import ChatMessage
@@ -55,6 +55,32 @@ class SQLMessageStore:
         with Session(self.engine) as session:
             session.add(row)
             session.commit()
+
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 180,
+        now: datetime | None = None,
+    ) -> int:
+        effective_now = _normalize_timestamp(now or datetime.now(UTC))
+        cutoff = effective_now - timedelta(days=retention_days)
+        expires_before = col(ChatMessageRow.created_at) <= cutoff
+
+        with Session(self.engine) as session:
+            deleted_count = session.exec(
+                select(func.count()).select_from(ChatMessageRow).where(
+                    expires_before
+                )
+            ).one()
+
+            if deleted_count:
+                session.exec(
+                    delete(ChatMessageRow).where(expires_before)
+                )
+
+            session.commit()
+
+        return int(deleted_count)
 
     def get_for_user(self, user_id: str) -> list[ChatMessage]:
         return self.get_for_user_after(user_id=user_id, after=None)
