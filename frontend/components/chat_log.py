@@ -1,4 +1,5 @@
 import textwrap
+from datetime import UTC, datetime
 
 from rich.text import Text
 from textual.widgets import RichLog
@@ -33,8 +34,10 @@ class ChatMessageRenderer:
 
         rendered_lines: list[Text] = []
 
+        created_at_local = self._to_local_time(message.created_at)
+
         header = (
-            f' {message.sender} - {message.created_at.strftime("%H:%M:%S")} '
+            f' {message.sender} - {created_at_local.strftime("%H:%M:%S")} '
         )
         rendered_header = Text(header, style=header_style)
         name_start = rendered_header.plain.find(message.sender)
@@ -83,6 +86,13 @@ class ChatMessageRenderer:
                 or ['']
             )
         return wrapped_lines
+
+    @staticmethod
+    def _to_local_time(value: datetime) -> datetime:
+        """Convert UTC/naive datetimes to the local timezone for display."""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone()
 
 
 class ChatLog(RichLog):
