@@ -16,6 +16,12 @@ from backend.core.message import ChatMessage
 
 
 class RelayChatBackend:
+    """Relay-backed chat transport for sending and receiving direct messages.
+
+    This backend keeps a persistent WebSocket connection to the relay and
+    forwards inbound events to UI callbacks.
+    """
+
     def __init__(
         self,
         config: ChatConfig,
@@ -36,6 +42,11 @@ class RelayChatBackend:
         self.stopping = False
 
     async def start(self) -> None:
+        """Start the relay connection loop.
+
+        Raises:
+            ValueError: If relay mode is selected without a relay URL.
+        """
         if not self.config.relay_url:
             raise ValueError('relay_url is required for relay mode')
 
@@ -50,6 +61,7 @@ class RelayChatBackend:
             self.read_task = asyncio.create_task(self._read_loop())
 
     async def stop(self) -> None:
+        """Stop background relay reads and close the active websocket."""
         self.stopping = True
 
         if self.read_task is not None:
@@ -61,6 +73,12 @@ class RelayChatBackend:
         await self._close_current_websocket()
 
     async def send(self, content: str, to: str | None = None) -> None:
+        """Send a chat message to one recipient through the relay.
+
+        Args:
+            content: Message text to send.
+            to: Explicit recipient user id. Falls back to configured peer.
+        """
         websocket = self.websocket
         if websocket is None:
             self.on_status('Not connected; waiting for relay reconnect...')
@@ -93,6 +111,12 @@ class RelayChatBackend:
             self.websocket = None
 
     async def send_typing(self, active: bool, to: str | None = None) -> None:
+        """Send typing activity state for a recipient.
+
+        Args:
+            active: Whether typing is currently active.
+            to: Explicit recipient user id. Falls back to configured peer.
+        """
         websocket = self.websocket
         if websocket is None:
             return
@@ -116,6 +140,7 @@ class RelayChatBackend:
             self.websocket = None
 
     async def _read_loop(self) -> None:
+        """Maintain relay connectivity and dispatch inbound packets."""
         if not self.relay_url:
             return
 
@@ -161,6 +186,12 @@ class RelayChatBackend:
                 self.on_status(f'Relay fatal error: {exc}')
 
     def _process_connect_exception(self, exc: Exception) -> Exception | None:
+        """Classify handshake exceptions as retryable or fatal.
+
+        Returns:
+            None for transient failures that should be retried, otherwise the
+            original exception to stop reconnect attempts.
+        """
         # Retry common transient/proxy-origin errors instead of treating them as fatal.
         if isinstance(exc, InvalidStatus):
             status_code = getattr(exc, 'status_code', None)
@@ -190,6 +221,10 @@ class RelayChatBackend:
         return exc
 
     def _handle_packet(self, packet: dict) -> None:
+        """Dispatch one decoded relay packet to callbacks.
+
+        Supported packet types are system, user_list, typing, and message.
+        """
         packet_type = packet.get('type')
 
         if packet_type == 'system':
@@ -246,6 +281,7 @@ class RelayChatBackend:
         self.on_message(message)
 
     async def _close_current_websocket(self) -> None:
+        """Close and clear the active websocket reference if present."""
         websocket = self.websocket
         self.websocket = None
         if websocket is not None:
@@ -253,6 +289,15 @@ class RelayChatBackend:
                 await websocket.close()
 
     def _normalize_relay_url(self, relay_url: str, username: str) -> str:
+        """Normalize relay URL scheme and path for per-user websocket routing.
+
+        Args:
+            relay_url: User-provided relay URL.
+            username: Local user id appended when URL ends in /ws.
+
+        Raises:
+            ValueError: If the scheme is insecure or unsupported.
+        """
         parts = urlsplit(relay_url)
 
         match parts.scheme:

@@ -9,6 +9,8 @@ MessageContentStr = Annotated[str, Field(min_length=1, max_length=4096)]
 
 
 class ChatMessage(BaseModel):
+    """Canonical chat message exchanged between clients and server APIs."""
+
     message_id: UUID
     sender: UsernameStr
     to: UsernameStr
@@ -19,5 +21,7 @@ class ChatMessage(BaseModel):
 
 
 class MessageEnvelope(BaseModel):
+    """Transport envelope wrapper containing packet type and payload."""
+
     type: str
     data: dict[str, Any]

@@ -31,6 +31,8 @@ from frontend.components.contact_list import ContactList, ContactSelected
 
 
 class ChatApp(App[None]):
+    """Textual chat application orchestrating backend events and UI state."""
+
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     REFRESH_UI_MIN_SECONDS = 0.5
     TITLE = 'Ogham Chat'
@@ -43,6 +45,7 @@ class ChatApp(App[None]):
     ]
 
     def __init__(self, config: ChatConfig) -> None:
+        """Initialize UI state and select the transport backend."""
         super().__init__()
         self.config = config
         self.shutting_down = False
@@ -73,6 +76,7 @@ class ChatApp(App[None]):
             )
 
     def compose(self) -> ComposeResult:
+        """Compose the application layout widgets."""
         yield Header(show_clock=True)
         yield Horizontal(
             ContactList(self_username=self.config.username, id='contacts'),
@@ -86,6 +90,7 @@ class ChatApp(App[None]):
         yield Footer()
 
     async def on_mount(self) -> None:
+        """Start backend services and initialize UI defaults on startup."""
         self.register_theme(NOSTALGOS_12)
         self.theme = 'nostalgos-12'
 
@@ -126,6 +131,7 @@ class ChatApp(App[None]):
         self._set_status('Ready — select a contact to start chatting')
 
     async def on_unmount(self) -> None:
+        """Shut down background tasks and backend connections."""
         self.shutting_down = True
         if self.sync_task is not None:
             self.sync_task.cancel()
@@ -135,10 +141,12 @@ class ChatApp(App[None]):
         await self.backend.stop()
 
     def on_resize(self, event: events.Resize) -> None:
+        """Re-render chat content after terminal resize events."""
         del event
         self.query_one('#chat', ChatLog).rerender()
 
     async def action_refresh(self) -> None:
+        """Manually refresh history and keep status visible briefly."""
         if self.shutting_down:
             return
 
@@ -164,6 +172,7 @@ class ChatApp(App[None]):
     async def on_chat_composer_submit(
         self, message: ChatComposerSubmit
     ) -> None:
+        """Send submitted text as a message and stop typing indicators."""
         composer = self.query_one('#composer', ChatComposer)
         content = self._sanitize_text(message.text).strip()
         composer.clear()
@@ -177,14 +186,17 @@ class ChatApp(App[None]):
     async def on_chat_composer_typing(
         self, message: ChatComposerTyping
     ) -> None:
+        """Forward local typing-state changes to the backend transport."""
         await self.backend.send_typing(message.active, to=self.active_peer)
 
     async def on_contact_selected(self, message: ContactSelected) -> None:
+        """Switch active conversation when a contact is selected."""
         self._set_active_peer(message.username)
         await self._load_conversation(message.username)
         self.query_one('#composer', ChatComposer).focus()
 
     def _on_user_list(self, users: list[str]) -> None:
+        """Update online-user state from backend presence events."""
         if self.shutting_down:
             return
 
@@ -192,6 +204,7 @@ class ChatApp(App[None]):
         self._refresh_contacts()
 
     def _on_network_message(self, message: ChatMessage) -> None:
+        """Handle one inbound network message and update conversation state."""
         if self.shutting_down:
             return
 
@@ -217,6 +230,7 @@ class ChatApp(App[None]):
             chat.set_messages(self.conversations.get(peer, []))
 
     def _on_network_typing(self, username: str, active: bool) -> None:
+        """Reflect typing activity from a peer in the chat log."""
         if self.shutting_down:
             return
 
@@ -224,6 +238,7 @@ class ChatApp(App[None]):
         self.query_one('#chat', ChatLog).set_peer_typing(username, active)
 
     def _set_active_peer(self, username: str) -> None:
+        """Set the active peer and refresh chat/contact panels."""
         if not username or username == self.config.username:
             return
 
@@ -245,6 +260,7 @@ class ChatApp(App[None]):
             self.query_one('#chat-column').add_class('has-peer')
 
     def _set_status(self, text: str) -> None:
+        """Write a status line message with a quit hint."""
         if self.shutting_down:
             return
 
@@ -256,6 +272,7 @@ class ChatApp(App[None]):
         status.update(f'{text} | Ctrl+C to quit')
 
     def _write_system_message(self, text: str) -> None:
+        """Append a local synthetic system message to the chat log."""
         self.query_one('#chat', ChatLog).append_message(
             ChatMessage(
                 message_id=uuid4(),
@@ -269,6 +286,7 @@ class ChatApp(App[None]):
         )
 
     def _sanitize_text(self, text: str) -> str:
+        """Strip ANSI escapes and non-printable control characters."""
         text = self.ANSI_ESCAPE_RE.sub('', text)
         return ''.join(
             ch
@@ -277,18 +295,21 @@ class ChatApp(App[None]):
         )
 
     def _remember_contact(self, username: str | None) -> None:
+        """Track a discovered contact and refresh the contact list."""
         if not username or username == self.config.username:
             return
         self.known_contacts.add(username)
         self._refresh_contacts()
 
     def _refresh_contacts(self) -> None:
+        """Render the current union of known and online contacts."""
         if self.shutting_down:
             return
         users = sorted(self.known_contacts | self.online_users)
         self.query_one('#contacts', ContactList).update_users(users)
 
     def _peer_for_message(self, message: ChatMessage) -> str:
+        """Return the conversation peer key for a message."""
         return (
             message.to
             if message.sender == self.config.username
@@ -296,6 +317,7 @@ class ChatApp(App[None]):
         )
 
     def _store_message(self, message: ChatMessage) -> None:
+        """Insert a message into conversation history with dedup and ordering."""
         message = self._normalize_message_timestamp(message)
         peer = self._peer_for_message(message)
         conversation = self.conversations[peer]
@@ -310,11 +332,13 @@ class ChatApp(App[None]):
         )
 
     async def _sync_loop(self) -> None:
+        """Periodically fetch recent history while the app is running."""
         while not self.shutting_down:
             await asyncio.sleep(5)
             await self._sync_recent_messages()
 
     async def _refresh_history(self, *, manual: bool = False) -> None:
+        """Refresh incoming and active-conversation history from relay APIs."""
         await self._sync_recent_messages()
 
         if self.active_peer:
@@ -327,6 +351,7 @@ class ChatApp(App[None]):
                 self._set_status('Local mode has no server history to refresh')
 
     async def _sync_recent_messages(self) -> None:
+        """Fetch incoming relay messages and merge them into local state."""
         if self.history_client is None:
             return
 
@@ -341,6 +366,7 @@ class ChatApp(App[None]):
         self._merge_history(messages, update_sync_cursor=True)
 
     async def _load_conversation(self, peer_id: str) -> None:
+        """Load full conversation history for the selected peer."""
         if self.history_client is None:
             return
 
@@ -362,6 +388,7 @@ class ChatApp(App[None]):
         *,
         update_sync_cursor: bool = False,
     ) -> None:
+        """Merge fetched history into local state while de-duplicating by id."""
         latest_seen_at = (
             self._normalized_timestamp(self.last_sync_at)
             if self.last_sync_at is not None
@@ -406,18 +433,21 @@ class ChatApp(App[None]):
     def _normalize_message_timestamp(
         self, message: ChatMessage
     ) -> ChatMessage:
+        """Return a message copy with UTC-normalized timestamp when needed."""
         normalized_created_at = self._normalized_timestamp(message.created_at)
         if normalized_created_at == message.created_at:
             return message
         return message.model_copy(update={'created_at': normalized_created_at})
 
     def _normalized_timestamp(self, value: datetime) -> datetime:
+        """Normalize any datetime value into timezone-aware UTC."""
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
 
 
 def main() -> None:
+    """Parse CLI args and launch the Textual chat application."""
     config = parse_args()
     ChatApp(config).run()
 

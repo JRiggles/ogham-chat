@@ -10,10 +10,18 @@ def create_ws_router(
     ws_manager: ConnectionManager,
     store: MessageStoreProtocol,
 ) -> APIRouter:
+    """Create websocket routes for realtime chat transport events."""
     router = APIRouter()
 
     @router.websocket('/ws/{user_id}')
     async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
+        """Handle one websocket connection for a user.
+
+        The endpoint processes three packet types:
+        - message: store and forward direct messages.
+        - typing: forward typing state to one recipient.
+        - announce: broadcast arbitrary presence-like packets to others.
+        """
         await ws_manager.connect(user_id, websocket)
 
         await websocket.send_json(

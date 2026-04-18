@@ -11,6 +11,11 @@ dependencies = [
     "textual>=8.2.3",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.12.0",
+]
+
 [tool.uv.workspace]
 members = [
     "ogham-chat",
@@ -19,3 +24,18 @@ members = [
 
 [tool.fastapi]
 entrypoint = "api:app"
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["D"]
+ignore = [
+    "D100", # module docstring (not enforced for this repo)
+    "D104", # package docstring (not enforced for __init__.py)
+    "D105", # magic method docstring
+    "D107", # __init__ docstring
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

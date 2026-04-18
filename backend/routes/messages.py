@@ -11,10 +11,12 @@ def create_messages_router(
     ws_manager: ConnectionManager,
     store: MessageStoreProtocol,
 ) -> APIRouter:
+    """Create HTTP routes for storing and querying chat message history."""
     router = APIRouter()
 
     @router.post('/messages', response_model=ChatMessage)
     async def create_message(message: ChatMessage) -> ChatMessage:
+        """Persist a chat message and push it to the recipient's sockets."""
         store.add(message)
 
         await ws_manager.send_to_user(
@@ -32,6 +34,7 @@ def create_messages_router(
         user_id: str,
         after: datetime | None = Query(default=None),
     ) -> list[ChatMessage]:
+        """Return messages addressed to a user, optionally after a timestamp."""
         return store.get_for_user_after(user_id=user_id, after=after)
 
     @router.get('/messages/conversation', response_model=list[ChatMessage])
@@ -40,6 +43,7 @@ def create_messages_router(
         peer_id: str,
         after: datetime | None = Query(default=None),
     ) -> list[ChatMessage]:
+        """Return the ordered conversation between two users."""
         return store.get_conversation(
             user_id=user_id,
             peer_id=peer_id,

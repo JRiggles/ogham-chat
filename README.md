@@ -26,6 +26,16 @@ python main.py join --host 127.0.0.1 --port 9000 --name bob
 
 Both terminals can send messages by typing and pressing Enter.
 
+## Docstring linting
+
+This project enforces Google-style function/class docstrings with Ruff.
+
+Run the check:
+
+```bash
+ruff check backend frontend main.py api.py
+```
+
 ## Run via relay
 
 Use the same TUI and point it at your deployed WebSocket relay endpoint.

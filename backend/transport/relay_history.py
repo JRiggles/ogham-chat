@@ -13,6 +13,8 @@ from backend.core.message import ChatMessage
 
 
 class RelayHistoryClient:
+    """Read-only HTTP client for relay-backed message history endpoints."""
+
     available = True
 
     def __init__(
@@ -20,12 +22,14 @@ class RelayHistoryClient:
         config: ChatConfig,
         on_status: Callable[[str], None],
     ) -> None:
+        """Initialize the history client with app configuration and status sink."""
         self.config = config
         self.on_status = on_status
 
     async def fetch_incoming_after(
         self, after: datetime | None = None
     ) -> list[ChatMessage]:
+        """Fetch messages addressed to the current user after a timestamp."""
         query_params = {'user_id': self.config.username}
         if after is not None:
             query_params['after'] = after.isoformat()
@@ -36,6 +40,7 @@ class RelayHistoryClient:
         peer_id: str,
         after: datetime | None = None,
     ) -> list[ChatMessage]:
+        """Fetch a conversation between the current user and one peer."""
         query_params = {
             'user_id': self.config.username,
             'peer_id': peer_id,
@@ -52,6 +57,7 @@ class RelayHistoryClient:
         route_path: str,
         query_params: dict[str, str],
     ) -> list[ChatMessage]:
+        """Run the blocking HTTP history request in a worker thread."""
         return await asyncio.to_thread(
             self._fetch_messages_sync,
             route_path,
@@ -63,6 +69,10 @@ class RelayHistoryClient:
         route_path: str,
         query_params: dict[str, str],
     ) -> list[ChatMessage]:
+        """Perform a synchronous HTTP history request and parse messages.
+
+        Returns an empty list when history is unavailable or malformed.
+        """
         api_base_url = self._api_base_url()
         request_url = f'{api_base_url}/{route_path}?{urlencode(query_params)}'
         request = Request(
@@ -103,6 +113,7 @@ class RelayHistoryClient:
         return messages
 
     def _api_base_url(self) -> str:
+        """Derive the HTTP API base URL from the configured relay websocket URL."""
         relay_url = self.config.relay_url or ''
         parts = urlsplit(relay_url)
 

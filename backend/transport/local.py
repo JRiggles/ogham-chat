@@ -31,6 +31,7 @@ class LocalChatBackend:
         on_typing: Callable[[str, bool], None],
         on_user_list: Callable[[list[str]], None] | None = None,
     ) -> None:
+        """Initialize callbacks and websocket state for host/join modes."""
         self.config = config
         self.on_message = on_message
         self.on_status = on_status
@@ -47,6 +48,7 @@ class LocalChatBackend:
     # ── lifecycle ──────────────────────────────────────────────
 
     async def start(self) -> None:
+        """Start local chat transport in host or join mode."""
         self.running = True
 
         if self.config.mode == 'host':
@@ -62,6 +64,7 @@ class LocalChatBackend:
             self._tasks.append(asyncio.create_task(self._join_loop()))
 
     async def stop(self) -> None:
+        """Stop local transport tasks and close server/client sockets."""
         self.running = False
 
         for task in self._tasks:
@@ -80,6 +83,7 @@ class LocalChatBackend:
     # ── sending ────────────────────────────────────────────────
 
     async def send(self, content: str, to: str | None = None) -> None:
+        """Send one chat message to connected peers or host server."""
         if not self.running:
             self.on_status('Local backend is not running')
             return
@@ -112,6 +116,7 @@ class LocalChatBackend:
         self.on_status('Sent')
 
     async def send_typing(self, active: bool, to: str | None = None) -> None:
+        """Broadcast typing activity changes to the current recipient."""
         if not self.running:
             return
 
@@ -137,6 +142,7 @@ class LocalChatBackend:
     async def _host_handler(
         self, websocket: websockets.ServerConnection
     ) -> None:
+        """Handle one inbound peer connection when running in host mode."""
         self._peers.add(websocket)
         self.on_status('Peer connected')
 
@@ -174,6 +180,7 @@ class LocalChatBackend:
     # ── join: client loop ──────────────────────────────────────
 
     async def _join_loop(self) -> None:
+        """Maintain a reconnecting websocket client loop in join mode."""
         url = f'ws://{self.config.host}:{self.config.port}'
         self.on_status(f'Connecting to {self.config.host}:{self.config.port}…')
 
@@ -233,6 +240,7 @@ class LocalChatBackend:
                 self.on_status('Disconnected; reconnecting…')
 
     def _handle_packet(self, raw: str | bytes) -> None:
+        """Decode and dispatch inbound local transport packets."""
         try:
             packet = json.loads(raw)
         except json.JSONDecodeError:
@@ -272,11 +280,13 @@ class LocalChatBackend:
             self.on_message(message)
 
     def _announce_payload(self) -> str:
+        """Build an announce packet containing the local username."""
         return json.dumps(
             {'type': 'announce', 'data': {'username': self.config.username}}
         )
 
     def _parse_packet(self, raw: str | bytes) -> dict | None:
+        """Parse raw websocket payload into a packet dict if valid JSON."""
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -297,10 +307,12 @@ class LocalChatBackend:
     async def _send_safe(
         ws: websockets.ServerConnection, payload: str
     ) -> None:
+        """Send payload to one socket while suppressing disconnect errors."""
         with contextlib.suppress(ConnectionClosed):
             await ws.send(payload)
 
     async def _close_ws(self) -> None:
+        """Close and clear the active join-mode websocket if present."""
         ws = self._ws
         self._ws = None
         if ws is not None:
