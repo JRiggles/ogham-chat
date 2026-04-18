@@ -25,8 +25,8 @@ from frontend.cli import parse_args
 from frontend.commands import SlashCommandHost, dispatch_slash_command
 from frontend.components.chat_log import ChatLog
 from frontend.components.composer import (
-    ChatComposerAutocomplete,
     ChatComposer,
+    ChatComposerAutocomplete,
     ChatComposerSubmit,
     ChatComposerTyping,
 )
@@ -35,6 +35,7 @@ from frontend.components.contact_list import ContactList, ContactSelected
 
 class ChatApp(App[None]):
     """Textual chat application orchestrating backend events and UI state."""
+
     ENABLE_COMMAND_PALETTE = False
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     REFRESH_UI_MIN_SECONDS = 0.5
@@ -292,18 +293,29 @@ class ChatApp(App[None]):
         status.update(f'{text} | Ctrl+C to quit')
 
     def _write_system_message(self, text: str) -> None:
-        """Append a local synthetic system message to the chat log."""
-        self.query_one('#chat', ChatLog).append_message(
-            ChatMessage(
-                message_id=uuid4(),
-                sender='ogham-chat',
-                to=self.config.username,
-                content=self._sanitize_text(text),
-                created_at=datetime.now(UTC),
-                is_system=True,
-                metadata=None,
-            )
+        """Append a local synthetic system message and persist it in view state."""
+        message = ChatMessage(
+            message_id=uuid4(),
+            sender='ogham-chat',
+            to=self.config.username,
+            content=self._sanitize_text(text),
+            created_at=datetime.now(UTC),
+            is_system=True,
+            metadata=None,
         )
+
+        chat = self.query_one('#chat', ChatLog)
+        if self.active_peer:
+            conversation = self.conversations[self.active_peer]
+            conversation.append(message)
+            conversation.sort(
+                key=lambda item: self._normalized_timestamp(item.created_at)
+            )
+            chat.set_messages(conversation)
+            return
+
+        # Before a peer is selected, fall back to ephemeral rendering.
+        chat.append_message(message)
 
     def _sanitize_text(self, text: str) -> str:
         """Strip ANSI escapes and non-printable control characters."""
