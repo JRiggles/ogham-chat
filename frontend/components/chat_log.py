@@ -182,6 +182,9 @@ class ChatMessageRenderer:
 class ChatLog(RichLog):
     """RichLog widget that displays messages and typing indicators."""
 
+    # only auto-scroll to tail if user is within this many lines of the end
+    SCROLL_FOLLOW_TAIL_THRESHOLD = 1
+
     def __init__(
         self,
         self_username: str,
@@ -245,6 +248,12 @@ class ChatLog(RichLog):
     def rerender(self) -> None:
         """Repaint all messages and any active typing indicator line."""
         width = max(self.size.width, 1)
+        previous_scroll_y = self.scroll_y
+        previous_max_scroll_y = self.max_scroll_y
+        follow_tail = (
+            previous_max_scroll_y - previous_scroll_y
+            <= self.SCROLL_FOLLOW_TAIL_THRESHOLD
+        )
         self.clear()
 
         for message in self.messages:
@@ -254,7 +263,7 @@ class ChatLog(RichLog):
                 self_username=self.self_username,
                 console=self.app.console,
             ):
-                self.write(line)
+                self.write(line, scroll_end=False)
 
         if self.typing_peers:
             names = ', '.join(sorted(self.typing_peers))
@@ -263,4 +272,16 @@ class ChatLog(RichLog):
                 if len(self.typing_peers) == 1
                 else 'are typing...'
             )
-            self.write(Text(f'{names} {suffix}', style='dim italic'))
+            self.write(
+                Text(f'{names} {suffix}', style='dim italic'),
+                scroll_end=False,
+            )
+
+        if follow_tail:
+            self.scroll_end(animate=False, immediate=True, x_axis=False)
+        else:
+            self.scroll_to(
+                y=min(previous_scroll_y, self.max_scroll_y),
+                animate=False,
+                immediate=True,
+            )
