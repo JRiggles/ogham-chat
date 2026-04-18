@@ -4,6 +4,7 @@ Screen {
 
 Horizontal {
     height: 1fr;
+    margin: 0 1;
 }
 
 #contacts {
@@ -11,7 +12,7 @@ Horizontal {
     height: 100%;
     background: $background;
     border: round $primary;
-    margin: 1 0 0 2;
+    # margin: 1 0 0 2;
     padding: 0 1;
 }
 
@@ -26,6 +27,7 @@ Horizontal {
 #chat-column {
     height: 100%;
     display: none;
+    margin-left: 1;
 }
 
 #chat-column.has-peer {
@@ -39,7 +41,7 @@ Horizontal {
     overflow-y: auto;
     scrollbar-gutter: stable;
     border: round $foreground;
-    margin: 1 0 0 1;
+    # margin: 1 0 0 1;
     padding: 1 2 1 2;
 }
 
@@ -50,7 +52,7 @@ Horizontal {
     border: round $warning;
     overflow-x: hidden;
     overflow-y: auto;
-    margin: 0 1;
+    # margin: 0 1;
     padding: 1 2 1 2;
 }
 
@@ -62,10 +64,8 @@ Horizontal {
     background: $background;
 }
 
-#status {
-    background: $background;
+StatusFooter #status-message {
+    dock: right;
+    padding: 0 1;
     color: $success;
-    height: 1;
-    margin: 0 1;
-    width: 100%;
 }

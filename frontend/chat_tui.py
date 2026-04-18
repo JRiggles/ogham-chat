@@ -9,9 +9,10 @@ from uuid import UUID, uuid4
 
 from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Footer, Header, Static, TextArea
+from textual.widgets import Header, TextArea
 
 from backend import (
     ChatConfig,
@@ -31,6 +32,7 @@ from frontend.components.composer import (
     ChatComposerTyping,
 )
 from frontend.components.contact_list import ContactList, ContactSelected
+from frontend.components.status_footer import StatusFooter
 
 
 class ChatApp(App[None]):
@@ -44,8 +46,8 @@ class ChatApp(App[None]):
     CSS_PATH = 'assets/style/chat.tcss'
 
     BINDINGS = [
-        ('ctrl+c', 'quit', 'Quit'),
-        ('ctrl+r', 'refresh', 'Refresh'),
+        Binding('ctrl+c', 'quit', 'Quit'),
+        Binding('ctrl+r', 'refresh', 'Refresh', show=False),
     ]
 
     def __init__(self, config: ChatConfig) -> None:
@@ -90,8 +92,7 @@ class ChatApp(App[None]):
                 id='chat-column',
             ),
         )
-        yield Static('', id='status')
-        yield Footer()
+        yield StatusFooter(id='footer')
 
     async def on_mount(self) -> None:
         """Start backend services and initialize UI defaults on startup."""
@@ -120,7 +121,7 @@ class ChatApp(App[None]):
         if self.config.mode == 'host':
             self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
         elif self.config.mode == 'relay':
-            self.sub_title = f'Connected to relay {self.config.relay_url}'
+            self.sub_title = 'Connected to Relay'
         else:
             self.sub_title = (
                 f'Connected to {self.config.host}:{self.config.port}'
@@ -281,16 +282,16 @@ class ChatApp(App[None]):
             self.query_one('#chat-column').add_class('has-peer')
 
     def _set_status(self, text: str) -> None:
-        """Write a status line message with a quit hint."""
+        """Write the current status message in the footer bar."""
         if self.shutting_down:
             return
 
         try:
-            status = self.query_one('#status', Static)
+            footer = self.query_one('#footer', StatusFooter)
         except NoMatches:
             return
 
-        status.update(f'{text} | Ctrl+C to quit')
+        footer.set_status(text)
 
     def _write_system_message(self, text: str) -> None:
         """Append a local synthetic system message and persist it in view state."""
