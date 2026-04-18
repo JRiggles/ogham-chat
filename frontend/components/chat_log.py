@@ -184,6 +184,7 @@ class ChatLog(RichLog):
 
     # only auto-scroll to tail if user is within this many lines of the end
     SCROLL_FOLLOW_TAIL_THRESHOLD = 1
+    CONTENT_RIGHT_GUTTER = 2
 
     def __init__(
         self,
@@ -198,6 +199,32 @@ class ChatLog(RichLog):
         self.renderer = renderer or ChatMessageRenderer()
         self.messages: list[ChatMessage] = []
         self.typing_peers: set[str] = set()
+
+    def scroll_to_last_message_start(self) -> None:
+        """Jump viewport to the start of the final rendered message block."""
+        if not self.messages:
+            return
+
+        width = max(
+            self.scrollable_content_region.width - self.CONTENT_RIGHT_GUTTER,
+            1,
+        )
+        start_line = 0
+        for message in self.messages[:-1]:
+            start_line += len(
+                self.renderer.render(
+                    message,
+                    width=width,
+                    self_username=self.self_username,
+                    console=self.app.console,
+                )
+            )
+
+        self.scroll_to(
+            y=min(start_line, self.max_scroll_y),
+            animate=False,
+            immediate=True,
+        )
 
     def append_message(self, message: ChatMessage) -> None:
         """Append one message and immediately re-render the log."""
@@ -247,7 +274,10 @@ class ChatLog(RichLog):
 
     def rerender(self) -> None:
         """Repaint all messages and any active typing indicator line."""
-        width = max(self.size.width, 1)
+        width = max(
+            self.scrollable_content_region.width - self.CONTENT_RIGHT_GUTTER,
+            1,
+        )
         previous_scroll_y = self.scroll_y
         previous_max_scroll_y = self.max_scroll_y
         follow_tail = (

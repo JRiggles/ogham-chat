@@ -12,8 +12,14 @@ Horizontal {
     height: 100%;
     background: $background;
     border: round $primary;
-    # margin: 1 0 0 2;
     padding: 0 1;
+}
+
+#contacts,
+#chat,
+#composer {
+    scrollbar-gutter: stable;
+    scrollbar-size-vertical: 1;
 }
 
 #contacts.has-peer {
@@ -39,10 +45,9 @@ Horizontal {
     background: $background;
     overflow-x: hidden;
     overflow-y: auto;
-    scrollbar-gutter: stable;
     border: round $foreground;
     # margin: 1 0 0 1;
-    padding: 1 2 1 2;
+    padding: 1 1 1 2;
 }
 
 #composer {
@@ -53,7 +58,7 @@ Horizontal {
     overflow-x: hidden;
     overflow-y: auto;
     # margin: 0 1;
-    padding: 1 2 1 2;
+    padding: 1 1 1 2;
 }
 
 #composer .text-area--cursor-line {

@@ -165,6 +165,10 @@ class ChatApp(App[None]):
         )
         contacts = self.query_one('#contacts', ContactList)
         contacts.border_title = 'Contacts'
+        if self.active_peer:
+            self.call_after_refresh(
+                chat.scroll_to_last_message_start,
+            )
         self._set_status('Ready — select a contact to start chatting')
 
     async def on_unmount(self) -> None:
