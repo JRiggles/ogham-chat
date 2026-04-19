@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 
 from backend.core.message import ChatMessage
 from backend.store.base import MessageStoreProtocol
@@ -14,20 +15,13 @@ def create_messages_router(
     """Create HTTP routes for storing and querying chat message history."""
     router = APIRouter()
 
-    @router.post('/messages', response_model=ChatMessage)
-    async def create_message(message: ChatMessage) -> ChatMessage:
-        """Persist a chat message and push it to the recipient's sockets."""
-        store.add(message)
-
-        await ws_manager.send_to_user(
-            message.to,
-            {
-                'type': 'message',
-                'data': message.model_dump(mode='json'),
-            },
+    @router.post('/messages', deprecated=True)
+    async def create_message(message: ChatMessage) -> JSONResponse:
+        """Reserved for future use (e.g. HTTP-only clients, integrations)."""
+        return JSONResponse(
+            status_code=501,
+            content={'detail': 'This endpoint is reserved for future use.'},
         )
-
-        return message
 
     @router.get('/messages/sync', response_model=list[ChatMessage])
     async def sync_messages(
