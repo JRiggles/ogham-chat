@@ -213,7 +213,7 @@ class SlashCommandHost(Protocol):
 HELP_TEXT = '\n'.join(
     [
         '__Slash commands:__',
-        '**/help** (**/?**) - Show available commands',
+        '**/help** (**/?**) - Show this help message',
         '**/refresh** (**/r**) - Refresh history now',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
