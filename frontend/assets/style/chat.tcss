@@ -26,6 +26,11 @@ Horizontal {
     width: 32;
 }
 
+#contacts.has-peer.collapsed {
+    width: 14;
+    overflow: hidden;
+}
+
 #contacts .tree__label {
     padding: 0 1;
 }

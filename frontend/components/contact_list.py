@@ -1,3 +1,4 @@
+from textual.events import Click
 from textual.message import Message
 from textual.widgets import Tree
 from textual.widgets._tree import TreeNode
@@ -86,6 +87,12 @@ class ContactList(Tree[NodeData]):
                 offline_group.expand()
 
         self._restore_selection(selected)
+
+    def on_click(self, event: Click) -> None:
+        """Toggle collapsed state when the border title area is clicked."""
+        if event.y == 0 and self.has_class('has-peer'):
+            self.toggle_class('collapsed')
+            event.stop()
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[NodeData]) -> None:
         """Emit contact-selected only when a user leaf node is selected."""
