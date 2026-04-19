@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import re
+import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import cast
@@ -102,6 +103,10 @@ class ChatApp(App[None]):
             manager=self.contact_group_manager,
             on_contacts_changed=self._on_contact_groups_changed,
         )
+        self._send_tokens = 4.0
+        self._send_tokens_max = 4.0
+        self._send_tokens_rate = 4.0  # tokens per second
+        self._send_tokens_last = time.monotonic()
         self.conversations: dict[str, list[ChatMessage]] = defaultdict(list)
         self.last_sync_at: datetime | None = None
         self.history_client: RelayHistoryClient | None = None
@@ -186,7 +191,10 @@ class ChatApp(App[None]):
             self.call_after_refresh(
                 chat.scroll_to_last_message_start,
             )
-        self._set_status('Ready — select a contact to start chatting')
+        self._set_status(
+            'Ready — select a contact to start chatting',
+            '$success'
+        )
 
     async def on_unmount(self) -> None:
         """Shut down background tasks and backend connections."""
@@ -222,7 +230,7 @@ class ChatApp(App[None]):
             if remaining > 0:
                 await asyncio.sleep(remaining)
 
-            self._set_status('Refreshed')
+            self._set_status('Refreshed', '$success')
             self.query_one('#composer', ChatComposer).focus()
         finally:
             self.refresh_in_flight = False
@@ -245,11 +253,6 @@ class ChatApp(App[None]):
         else:
             removed = chat.clear_system_messages()
 
-        if removed:
-            self._set_status(f'Cleared {removed} system message(s)')
-        else:
-            self._set_status('No system messages to clear')
-
     async def on_chat_composer_submit(
         self, message: ChatComposerSubmit
     ) -> None:
@@ -271,6 +274,14 @@ class ChatApp(App[None]):
                 if handled:
                     await self.backend.send_typing(False, to=self.active_peer)
                     return
+
+        if not self._consume_send_token():
+            self._set_status(
+                'Slow down! Max 4 messages per second.',
+                '$warning'
+            )
+            self.bell()  # ding!
+            return
 
         for chunk, is_continuation in _split_message(content):
             meta = {'continuation': True} if is_continuation else None
@@ -359,7 +370,7 @@ class ChatApp(App[None]):
             self.query_one('#contacts').add_class('has-peer')
             self.query_one('#chat-column').add_class('has-peer')
 
-    def _set_status(self, text: str) -> None:
+    def _set_status(self, text: str, color: str | None = None) -> None:
         """Write the current status message in the footer bar."""
         if self.shutting_down:
             return
@@ -369,7 +380,7 @@ class ChatApp(App[None]):
         except NoMatches:
             return
 
-        footer.set_status(text)
+        footer.set_status(text, color)
 
     def _write_system_message(self, text: str) -> None:
         """Append a local synthetic system message and persist it in view state."""
@@ -404,6 +415,20 @@ class ChatApp(App[None]):
             for ch in text
             if ch == '\n' or ch == '\t' or ch == ' ' or ch.isprintable()
         )
+
+    def _consume_send_token(self) -> bool:
+        """Consume one send token, returning True if allowed."""
+        now = time.monotonic()
+        elapsed = now - self._send_tokens_last
+        self._send_tokens_last = now
+        self._send_tokens = min(
+            self._send_tokens_max,
+            self._send_tokens + elapsed * self._send_tokens_rate,
+        )
+        if self._send_tokens < 1.0:
+            return False
+        self._send_tokens -= 1.0
+        return True
 
     def _remember_contact(self, username: str | None) -> None:
         """Track a discovered contact and refresh the contact list."""
@@ -471,9 +496,9 @@ class ChatApp(App[None]):
 
         if manual:
             if self.history_client is not None:
-                self._set_status('Refresh complete')
+                self._set_status('Refreshed', '$success')
             else:
-                self._set_status('Local mode has no server history to refresh')
+                self._set_status('No messages')
 
     async def _sync_recent_messages(self) -> None:
         """Fetch incoming relay messages and merge them into local state."""
@@ -485,7 +510,7 @@ class ChatApp(App[None]):
                 self.last_sync_at
             )
         except Exception as exc:
-            self._set_status(f'History sync failed: {exc}')
+            self._set_status(f'Chat history sync failed: {exc}', '$error')
             return
 
         self._merge_history(messages, update_sync_cursor=True)
@@ -498,7 +523,7 @@ class ChatApp(App[None]):
         try:
             messages = await self.history_client.fetch_conversation(peer_id)
         except Exception as exc:
-            self._set_status(f'Conversation load failed: {exc}')
+            self._set_status(f'Conversation load failed: {exc}', '$error')
             return
 
         self._merge_history(messages)
