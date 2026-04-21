@@ -79,6 +79,45 @@ Horizontal {
     background: $background;
 }
 
+SplashScreen {
+    align: center middle;
+    background: $background 70%;
+}
+
+SplashScreen #splash-card {
+    width: 42;
+    max-width: 50%;
+    height: auto;
+    max-height: 18;
+    align: center middle;
+    layout: vertical;
+    content-align: center middle;
+    border: round $warning;
+    background: $surface;
+    color: $foreground;
+    margin: 0;
+    padding: 2;
+}
+
+SplashScreen .splash-copy {
+    width: 1fr;
+    content-align: center middle;
+    text-align: center;
+    padding-bottom: 1;
+}
+
+SplashScreen #splash-subtitle {
+    color: $success;
+}
+
+SplashScreen #splash-loader {
+    width: 1fr;
+    height: auto;
+    content-align: center middle;
+    color: $warning;
+}
+
+
 StatusFooter #status-message {
     dock: right;
     padding: 0 1;

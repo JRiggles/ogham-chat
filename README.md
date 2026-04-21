@@ -2,6 +2,8 @@
 
 Minimal in-terminal chat app built with Textual.
 
+Version: 0.1.0
+
 ## Screenshots
 
 ![Ogham Chat](screenshots/Ogham%20Chat.png)

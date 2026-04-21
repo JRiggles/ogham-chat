@@ -38,6 +38,7 @@ from frontend.components.composer import (
     ChatComposerTyping,
 )
 from frontend.components.contact_list import ContactList, ContactSelected
+from frontend.components.splash_screen import SplashScreen
 from frontend.components.status_footer import StatusFooter
 from frontend.contact_groups import ContactGroupManager
 
@@ -75,8 +76,9 @@ class ChatApp(App[None]):
     ENABLE_COMMAND_PALETTE = False
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     REFRESH_UI_MIN_SECONDS = 0.5
+    SPLASH_MIN_SECONDS = 1.0
     TITLE = 'Ogham Chat'
-    SUB_TITLE = 'Local Terminal Relay'  # TODO: dynamic status? better sub?
+    SUB_TITLE = 'Local Terminal Relay'
     CSS_PATH = 'assets/style/chat.tcss'
 
     BINDINGS = [
@@ -111,6 +113,7 @@ class ChatApp(App[None]):
         self.last_sync_at: datetime | None = None
         self.history_client: RelayHistoryClient | None = None
         self.sync_task: asyncio.Task[None] | None = None
+        self.startup_task: asyncio.Task[None] | None = None
         self.refresh_in_flight = False
 
         backend_cls = (
@@ -144,61 +147,88 @@ class ChatApp(App[None]):
 
     async def on_mount(self) -> None:
         """Start backend services and initialize UI defaults on startup."""
-        self.register_theme(NOSTALGOS_12)
-        self.theme = 'nostalgos-12'
-        self.contact_group_manager.load()
-        self.known_contacts.update(self.contact_group_manager.contacts())
+        # TODO: Resolve display username from verified X3DH identity at
+        # startup and pass personalized splash copy (e.g. "Welcome Bob").
+        splash = SplashScreen(show_loader=True)
+        await self.push_screen(splash)
+        self.startup_task = asyncio.create_task(self._initialize_ui(splash))
 
-        await self.backend.start()
+    async def _initialize_ui(self, splash: SplashScreen) -> None:
+        """Run startup initialization while splash is visible."""
+        splash_started_at = asyncio.get_running_loop().time()
+        try:
+            self.register_theme(NOSTALGOS_12)
+            self.theme = 'nostalgos-12'
+            self.contact_group_manager.load()
+            self.known_contacts.update(self.contact_group_manager.contacts())
 
-        await self._sync_recent_messages()
-        if self.history_client is not None:
-            self.sync_task = asyncio.create_task(self._sync_loop())
-        if self.active_peer:
-            await self._load_conversation(self.active_peer)
+            await self.backend.start()
 
-        chat = self.query_one('#chat', ChatLog)
-        composer = self.query_one('#composer', TextArea)
-        composer.focus()
+            await self._sync_recent_messages()
+            if self.history_client is not None:
+                self.sync_task = asyncio.create_task(self._sync_loop())
+            if self.active_peer:
+                await self._load_conversation(self.active_peer)
 
-        theme = self.get_theme(self.theme)
-        if theme is None:
-            chat.set_message_styles('green', 'blue', 'white')
-        else:
-            chat.set_message_styles(
-                str(theme.primary),
-                str(theme.success),
-                str(theme.foreground),
+            chat = self.query_one('#chat', ChatLog)
+            composer = self.query_one('#composer', TextArea)
+            composer.focus()
+
+            theme = self.get_theme(self.theme)
+            if theme is None:
+                chat.set_message_styles('green', 'blue', 'white')
+            else:
+                chat.set_message_styles(
+                    str(theme.primary),
+                    str(theme.success),
+                    str(theme.foreground),
+                )
+
+            self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
+            if self.config.mode == 'host':
+                self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
+            elif self.config.mode == 'relay':
+                self.sub_title = 'Connected to Relay'
+            else:
+                self.sub_title = (
+                    f'Connected to {self.config.host}:{self.config.port}'
+                )
+
+            chat.border_title = 'Chat Log'
+            composer.border_title = (
+                'Write a message (Enter: send | Shift+Enter: newline)'
             )
+            contacts = self.query_one('#contacts', ContactList)
+            contacts.border_title = 'Contacts'
+            if self.active_peer:
+                self.call_after_refresh(
+                    chat.scroll_to_last_message_start,
+                )
 
-        self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
-        if self.config.mode == 'host':
-            self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
-        elif self.config.mode == 'relay':
-            self.sub_title = 'Connected to Relay'
-        else:
-            self.sub_title = (
-                f'Connected to {self.config.host}:{self.config.port}'
+            self._set_status(
+                'Ready — select a contact to start chatting',
+                '$success',
             )
-
-        chat.border_title = 'Chat Log'
-        composer.border_title = (
-            'Write a message (Enter: send | Shift+Enter: newline)'
-        )
-        contacts = self.query_one('#contacts', ContactList)
-        contacts.border_title = 'Contacts'
-        if self.active_peer:
-            self.call_after_refresh(
-                chat.scroll_to_last_message_start,
+        except Exception as exc:
+            self._set_status(f'Startup failed: {exc}', '$error')
+        finally:
+            splash_elapsed = (
+                asyncio.get_running_loop().time() - splash_started_at
             )
-        self._set_status(
-            'Ready — select a contact to start chatting',
-            '$success'
-        )
+            splash_remaining = self.SPLASH_MIN_SECONDS - splash_elapsed
+            if splash_remaining > 0:
+                await asyncio.sleep(splash_remaining)
+            if self.screen is splash:
+                await self.pop_screen()
 
     async def on_unmount(self) -> None:
         """Shut down background tasks and backend connections."""
         self.shutting_down = True
+        if self.startup_task is not None:
+            self.startup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.startup_task
+            self.startup_task = None
         if self.sync_task is not None:
             self.sync_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -234,6 +264,12 @@ class ChatApp(App[None]):
             self.query_one('#composer', ChatComposer).focus()
         finally:
             self.refresh_in_flight = False
+
+    async def action_about(self) -> None:
+        """Show app information in a temporary splash modal."""
+        splash = SplashScreen()
+        await self.push_screen(splash)
+        self._set_status('About Ogham Chat')
 
     async def action_clear_system_messages(self) -> None:
         """Clear system messages from the currently visible conversation."""
@@ -277,8 +313,7 @@ class ChatApp(App[None]):
 
         if not self._consume_send_token():
             self._set_status(
-                'Slow down! Max 4 messages per second.',
-                '$warning'
+                'Slow down! Max 4 messages per second.', '$warning'
             )
             self.bell()  # ding!
             return

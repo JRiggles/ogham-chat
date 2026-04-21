@@ -102,6 +102,7 @@ WidgetT = TypeVar('WidgetT')
 
 CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
     'help',
+    'about',
     'refresh',
     'clear',
     'chat',
@@ -113,6 +114,7 @@ CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
 
 SLASH_COMMAND_ALIASES: dict[str, str] = {
     '?': 'help',
+    'a': 'about',
     'r': 'refresh',
     'c': 'clear',
     'cls': 'clear',
@@ -193,7 +195,7 @@ class SlashCommandHost(Protocol):
         """Return a widget by CSS selector and expected type."""
         ...
 
-    def _set_status(self, text: str) -> None: ...
+    def _set_status(self, text: str, color: str | None = None) -> None: ...
 
     def _write_system_message(self, text: str) -> None: ...
 
@@ -205,6 +207,10 @@ class SlashCommandHost(Protocol):
         """Refresh chat history through the application's refresh action."""
         ...
 
+    async def action_about(self) -> None:
+        """Show the about splash modal."""
+        ...
+
     async def action_quit(self) -> None:
         """Close the application."""
         ...
@@ -214,6 +220,7 @@ HELP_TEXT = '\n'.join(
     [
         '__Slash commands:__',
         '**/help** (**/?**) - Show this help message',
+        '**/about** (**/a**) - Show app info',
         '**/refresh** (**/r**) - Refresh history now',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
@@ -234,6 +241,7 @@ HELP_TEXT = '\n'.join(
         '',
         '**//message** - Send text that starts with a slash',
         '',
+        '__Keyboard shortcuts:__',
         '**Esc** - Clear system messages like this one',
         '',
         '__Message formatting:__',
@@ -249,7 +257,6 @@ HELP_TEXT = '\n'.join(
         '',
     ]
 )
-
 
 def _write_system_output(host: SlashCommandHost, text: str) -> None:
     """Write slash-command output with a guaranteed trailing newline."""
@@ -292,6 +299,10 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
     if canonical_name == 'help':
         _write_system_output(host, HELP_TEXT)
         host._set_status('Slash command help')
+        return True
+
+    if canonical_name == 'about':
+        await host.action_about()
         return True
 
     if canonical_name == 'refresh':
@@ -347,7 +358,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             f'- Known contacts: {len(host.known_contacts)}\n'
             f'- Online users: {len(host.online_users)}',
         )
-        host._set_status('Displayed chat status')
+        host._set_status('Showing chat status')
         return True
 
     if canonical_name == 'contact':
@@ -453,7 +464,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             username = args[0] if args else None
             result = host.group_commands.list_contact_groups(username)
             _write_system_output(host, result)
-            host._set_status('Displayed groups')
+            host._set_status('Showing groups')
             return True
 
         host._set_status('Usage: /group add|remove|move|delete|list ...')
