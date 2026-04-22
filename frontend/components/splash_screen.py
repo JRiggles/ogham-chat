@@ -32,9 +32,7 @@ class SplashScreen(ModalScreen[None]):
     ) -> None:
         """Initialize splash content text."""
         super().__init__()
-        self.splash_title_text = (
-            title if title is not None else DEFAULT_SPLASH_TITLE
-        )
+        self.splash_title_text = title if title is not None else DEFAULT_SPLASH_TITLE
         self.splash_subtitle_text = (
             subtitle if subtitle is not None else _default_subtitle()
         )

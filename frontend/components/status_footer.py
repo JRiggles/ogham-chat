@@ -20,9 +20,7 @@ class StatusFooter(Footer):
         yield from super().compose()
         yield Static(self.status_text, id='status-message')
 
-    def _update_status_label(
-        self, text: str, color: str | None = None
-    ) -> bool:
+    def _update_status_label(self, text: str, color: str | None = None) -> bool:
         """Update mounted status label text if available.
 
         Returns:

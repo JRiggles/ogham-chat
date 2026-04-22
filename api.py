@@ -20,7 +20,7 @@ app = FastAPI(title='Ogham Chat API', version='0.1.0')
 app.state.limiter = limiter
 app.add_exception_handler(
     RateLimitExceeded,
-    _rate_limit_exceeded_handler  # type: ignore[arg-type]
+    _rate_limit_exceeded_handler,  # type: ignore[arg-type]
 )
 v1 = APIRouter(prefix='/api/v1', tags=['v1'])
 
@@ -35,9 +35,7 @@ v1.include_router(create_ws_router(ws_manager, store))
 
 app.include_router(v1)
 
-_LANDING_PATH = (
-    Path(__file__).resolve().parent / 'backend' / 'static' / 'landing.html'
-)
+_LANDING_PATH = Path(__file__).resolve().parent / 'backend' / 'static' / 'landing.html'
 _LANDING_HTML = _LANDING_PATH.read_text(encoding='utf-8')
 
 

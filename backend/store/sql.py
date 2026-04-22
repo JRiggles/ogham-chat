@@ -77,9 +77,7 @@ class SQLMessageStore:
 
         with Session(self.engine) as session:
             deleted_count = session.exec(
-                select(func.count())
-                .select_from(ChatMessageRow)
-                .where(expires_before)
+                select(func.count()).select_from(ChatMessageRow).where(expires_before)
             ).one()
 
             if deleted_count:
@@ -97,9 +95,7 @@ class SQLMessageStore:
         self, user_id: str, after: datetime | None = None
     ) -> list[ChatMessage]:
         """Return user-directed messages newer than an optional timestamp."""
-        statement = select(ChatMessageRow).where(
-            ChatMessageRow.recipient == user_id
-        )
+        statement = select(ChatMessageRow).where(ChatMessageRow.recipient == user_id)
         if after is not None:
             statement = statement.where(ChatMessageRow.created_at > after)
         statement = statement.order_by(col(ChatMessageRow.created_at))

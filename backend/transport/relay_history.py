@@ -130,6 +130,4 @@ class RelayHistoryClient:
         elif path.endswith('/ws'):
             path = path[:-3]
 
-        return urlunsplit((scheme, parts.netloc, path or '/', '', '')).rstrip(
-            '/'
-        )
+        return urlunsplit((scheme, parts.netloc, path or '/', '', '')).rstrip('/')

@@ -142,9 +142,7 @@ class LocalChatBackend:
 
     # ── host: server handling ──────────────────────────────────
 
-    async def _host_handler(
-        self, websocket: websockets.ServerConnection
-    ) -> None:
+    async def _host_handler(self, websocket: websockets.ServerConnection) -> None:
         """Handle one inbound peer connection when running in host mode."""
         self._peers.add(websocket)
         self.on_status('Peer connected')
@@ -157,11 +155,7 @@ class LocalChatBackend:
                 packet = self._parse_packet(raw)
                 if packet and packet.get('type') == 'announce':
                     data = packet.get('data', {})
-                    name = (
-                        data.get('username')
-                        if isinstance(data, dict)
-                        else None
-                    )
+                    name = data.get('username') if isinstance(data, dict) else None
                     if isinstance(name, str):
                         self._peer_names[websocket] = name
                         self._broadcast_user_list()
@@ -200,9 +194,7 @@ class LocalChatBackend:
                     return
 
                 self._ws = websocket
-                self.on_status(
-                    f'Connected to {self.config.host}:{self.config.port}'
-                )
+                self.on_status(f'Connected to {self.config.host}:{self.config.port}')
 
                 # Announce ourselves so the host learns our username.
                 await websocket.send(self._announce_payload())
@@ -307,9 +299,7 @@ class LocalChatBackend:
             loop.create_task(self._send_safe(peer, payload))
 
     @staticmethod
-    async def _send_safe(
-        ws: websockets.ServerConnection, payload: str
-    ) -> None:
+    async def _send_safe(ws: websockets.ServerConnection, payload: str) -> None:
         """Send payload to one socket while suppressing disconnect errors."""
         with contextlib.suppress(ConnectionClosed):
             await ws.send(payload)

@@ -42,9 +42,7 @@ class ContactGroupManager:
         self._save()
         return f'Removed contact {normalized_username}', True
 
-    def add_contact_group(
-        self, username: str, group_name: str
-    ) -> tuple[str, bool]:
+    def add_contact_group(self, username: str, group_name: str) -> tuple[str, bool]:
         """Assign one contact to a named group and persist the update."""
         normalized_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
@@ -61,9 +59,7 @@ class ContactGroupManager:
         self._save()
         return f'Added {normalized_username} to group {normalized_group}', True
 
-    def remove_contact_group(
-        self, username: str, group_name: str
-    ) -> tuple[str, bool]:
+    def remove_contact_group(self, username: str, group_name: str) -> tuple[str, bool]:
         """Remove one contact from a named group and persist the update."""
         normalized_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
@@ -154,9 +150,7 @@ class ContactGroupManager:
         """Return a text summary of configured groups for one/all contacts."""
         if username:
             normalized_username = username.strip()
-            groups = sorted(
-                self._groups_by_user.get(normalized_username, set())
-            )
+            groups = sorted(self._groups_by_user.get(normalized_username, set()))
             if not groups:
                 return f'{normalized_username}: (no groups)'
             return f'{normalized_username}: {", ".join(groups)}'

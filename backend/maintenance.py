@@ -7,9 +7,7 @@ from backend.store.sql import SQLMessageStore
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the maintenance CLI parser and subcommands."""
-    parser = argparse.ArgumentParser(
-        description='Ogham Chat maintenance commands'
-    )
+    parser = argparse.ArgumentParser(description='Ogham Chat maintenance commands')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     purge_parser = subparsers.add_parser(

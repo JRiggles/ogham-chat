@@ -10,9 +10,7 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         """Initialize an empty user-to-connections mapping."""
-        self._connections: DefaultDict[str, list[WebSocket]] = defaultdict(
-            list
-        )
+        self._connections: DefaultDict[str, list[WebSocket]] = defaultdict(list)
 
     async def connect(self, user_id: str, websocket: WebSocket) -> None:
         """Accept and register a websocket for a user."""

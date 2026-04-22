@@ -312,9 +312,7 @@ class RelayChatBackend:
             case 'http' | 'ws':
                 raise ValueError('Insecure relay URL scheme not allowed.')
             case _:
-                raise ValueError(
-                    f'Unsupported relay URL scheme "{parts.scheme}"'
-                )
+                raise ValueError(f'Unsupported relay URL scheme "{parts.scheme}"')
 
         # Ensure the websocket path is user-specific: /ws/{user_id}
         normalized = base.rstrip('/')
