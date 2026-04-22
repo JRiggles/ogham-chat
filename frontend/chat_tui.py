@@ -5,7 +5,7 @@ import re
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from textual import events
@@ -22,12 +22,13 @@ from backend import (
     RelayHistoryClient,
 )
 from backend.core.message import ChatMessage
-from frontend.assets.style.theme import NOSTALGOS_12
+from frontend.assets.style.theme import OGHAM_THEME
 from frontend.cli import parse_args
 from frontend.commands import (
     ContactCommandActions,
     ContactGroupCommandActions,
     SlashCommandHost,
+    ThemeCommandActions,
     dispatch_slash_command,
 )
 from frontend.components.chat_log import ChatLog
@@ -77,6 +78,8 @@ class ChatApp(App[None]):
     ANSI_ESCAPE_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     REFRESH_UI_MIN_SECONDS = 0.5
     SPLASH_MIN_SECONDS = 1.0
+    OGHAM_THEME_NAME = 'ogham'
+    DEFAULT_THEME_ALIAS = 'default'
     TITLE = 'Ogham Chat'
     SUB_TITLE = 'Local Terminal Relay'
     CSS_PATH = 'assets/style/chat.tcss'
@@ -105,6 +108,16 @@ class ChatApp(App[None]):
             manager=self.contact_group_manager,
             on_contacts_changed=self._on_contact_groups_changed,
         )
+        self.theme_commands = ThemeCommandActions(
+            default_theme_name=self.OGHAM_THEME_NAME,
+            default_theme_alias=self.DEFAULT_THEME_ALIAS,
+            default_theme_label='ogham (default)',
+            get_current_theme=lambda: self.theme,
+            available_themes=lambda: self.available_themes,
+            get_theme=self.get_theme,
+            set_theme=self._set_theme_name,
+            on_theme_applied=self._on_theme_applied,
+        )
         self._send_tokens = 4.0
         self._send_tokens_max = 4.0
         self._send_tokens_rate = 4.0  # tokens per second
@@ -116,9 +129,7 @@ class ChatApp(App[None]):
         self.startup_task: asyncio.Task[None] | None = None
         self.refresh_in_flight = False
 
-        backend_cls = (
-            RelayChatBackend if config.mode == 'relay' else LocalChatBackend
-        )
+        backend_cls = RelayChatBackend if config.mode == 'relay' else LocalChatBackend
         self.backend = backend_cls(
             config=config,
             on_message=self._on_network_message,
@@ -157,8 +168,8 @@ class ChatApp(App[None]):
         """Run startup initialization while splash is visible."""
         splash_started_at = asyncio.get_running_loop().time()
         try:
-            self.register_theme(NOSTALGOS_12)
-            self.theme = 'nostalgos-12'
+            self.register_theme(OGHAM_THEME)
+            self.theme_commands.apply_theme(self.DEFAULT_THEME_ALIAS)
             self.contact_group_manager.load()
             self.known_contacts.update(self.contact_group_manager.contacts())
 
@@ -171,18 +182,9 @@ class ChatApp(App[None]):
                 await self._load_conversation(self.active_peer)
 
             chat = self.query_one('#chat', ChatLog)
-            composer = self.query_one('#composer', TextArea)
+            composer = self.query_one('#composer', ChatComposer)
+            composer.set_theme_targets(self.theme_commands.get_available_themes())
             composer.focus()
-
-            theme = self.get_theme(self.theme)
-            if theme is None:
-                chat.set_message_styles('green', 'blue', 'white')
-            else:
-                chat.set_message_styles(
-                    str(theme.primary),
-                    str(theme.success),
-                    str(theme.foreground),
-                )
 
             self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
             if self.config.mode == 'host':
@@ -190,9 +192,7 @@ class ChatApp(App[None]):
             elif self.config.mode == 'relay':
                 self.sub_title = 'Connected to Relay'
             else:
-                self.sub_title = (
-                    f'Connected to {self.config.host}:{self.config.port}'
-                )
+                self.sub_title = f'Connected to {self.config.host}:{self.config.port}'
 
             chat.border_title = 'Chat Log'
             composer.border_title = (
@@ -212,14 +212,26 @@ class ChatApp(App[None]):
         except Exception as exc:
             self._set_status(f'Startup failed: {exc}', '$error')
         finally:
-            splash_elapsed = (
-                asyncio.get_running_loop().time() - splash_started_at
-            )
+            splash_elapsed = asyncio.get_running_loop().time() - splash_started_at
             splash_remaining = self.SPLASH_MIN_SECONDS - splash_elapsed
             if splash_remaining > 0:
                 await asyncio.sleep(splash_remaining)
             if self.screen is splash:
                 await self.pop_screen()
+
+    def _set_theme_name(self, name: str) -> None:
+        """Set the active Textual theme by registered name."""
+        self.theme = name
+
+    def _on_theme_applied(self, theme: Any) -> None:
+        """Refresh chat message colors after a theme change."""
+        with contextlib.suppress(NoMatches):
+            chat = self.query_one('#chat', ChatLog)
+            chat.set_message_styles(
+                str(theme.primary),
+                str(theme.success),
+                str(theme.foreground),
+            )
 
     async def on_unmount(self) -> None:
         """Shut down background tasks and backend connections."""
@@ -289,9 +301,7 @@ class ChatApp(App[None]):
         else:
             removed = chat.clear_system_messages()
 
-    async def on_chat_composer_submit(
-        self, message: ChatComposerSubmit
-    ) -> None:
+    async def on_chat_composer_submit(self, message: ChatComposerSubmit) -> None:
         """Send submitted text as a message and stop typing indicators."""
         composer = self.query_one('#composer', ChatComposer)
         content = self._sanitize_text(message.text).strip()
@@ -312,9 +322,7 @@ class ChatApp(App[None]):
                     return
 
         if not self._consume_send_token():
-            self._set_status(
-                'Slow down! Max 4 messages per second.', '$warning'
-            )
+            self._set_status('Slow down! Max 4 messages per second.', '$warning')
             self.bell()  # ding!
             return
 
@@ -323,15 +331,11 @@ class ChatApp(App[None]):
             await self.backend.send(chunk, to=self.active_peer, metadata=meta)
         await self.backend.send_typing(False, to=self.active_peer)
 
-    async def on_chat_composer_typing(
-        self, message: ChatComposerTyping
-    ) -> None:
+    async def on_chat_composer_typing(self, message: ChatComposerTyping) -> None:
         """Forward local typing-state changes to the backend transport."""
         await self.backend.send_typing(message.active, to=self.active_peer)
 
-    def on_chat_composer_autocomplete(
-        self, message: ChatComposerAutocomplete
-    ) -> None:
+    def on_chat_composer_autocomplete(self, message: ChatComposerAutocomplete) -> None:
         """Surface slash-autocomplete hints in the status bar."""
         self._set_status(message.text)
 
@@ -394,9 +398,7 @@ class ChatApp(App[None]):
 
         self.active_peer = username
         self._remember_contact(username)
-        self.query_one(
-            '#chat', ChatLog
-        ).border_title = f'Chatting with {username}'
+        self.query_one('#chat', ChatLog).border_title = f'Chatting with {username}'
         self.query_one('#chat', ChatLog).set_messages(
             self.conversations.get(username, [])
         )
@@ -495,26 +497,17 @@ class ChatApp(App[None]):
 
     def _peer_for_message(self, message: ChatMessage) -> str:
         """Return the conversation peer key for a message."""
-        return (
-            message.to
-            if message.sender == self.config.username
-            else message.sender
-        )
+        return message.to if message.sender == self.config.username else message.sender
 
     def _store_message(self, message: ChatMessage) -> None:
         """Insert a message into conversation history with dedup and ordering."""
         message = self._normalize_message_timestamp(message)
         peer = self._peer_for_message(message)
         conversation = self.conversations[peer]
-        if any(
-            existing.message_id == message.message_id
-            for existing in conversation
-        ):
+        if any(existing.message_id == message.message_id for existing in conversation):
             return
         conversation.append(message)
-        conversation.sort(
-            key=lambda item: self._normalized_timestamp(item.created_at)
-        )
+        conversation.sort(key=lambda item: self._normalized_timestamp(item.created_at))
 
     async def _sync_loop(self) -> None:
         """Periodically fetch recent history while the app is running."""
@@ -541,9 +534,7 @@ class ChatApp(App[None]):
             return
 
         try:
-            messages = await self.history_client.fetch_incoming_after(
-                self.last_sync_at
-            )
+            messages = await self.history_client.fetch_incoming_after(self.last_sync_at)
         except Exception as exc:
             self._set_status(f'Chat history sync failed: {exc}', '$error')
             return
@@ -581,14 +572,9 @@ class ChatApp(App[None]):
         )
 
         for message in messages:
-            normalized_created_at = self._normalized_timestamp(
-                message.created_at
-            )
+            normalized_created_at = self._normalized_timestamp(message.created_at)
             if message.message_id in self.seen_messages:
-                if (
-                    latest_seen_at is None
-                    or normalized_created_at > latest_seen_at
-                ):
+                if latest_seen_at is None or normalized_created_at > latest_seen_at:
                     latest_seen_at = normalized_created_at
                 continue
 
@@ -601,10 +587,7 @@ class ChatApp(App[None]):
             self.seen_messages.add(sanitized.message_id)
             self._remember_contact(self._peer_for_message(sanitized))
             self._store_message(sanitized)
-            if (
-                latest_seen_at is None
-                or normalized_created_at > latest_seen_at
-            ):
+            if latest_seen_at is None or normalized_created_at > latest_seen_at:
                 latest_seen_at = normalized_created_at
 
         if update_sync_cursor:
@@ -615,9 +598,7 @@ class ChatApp(App[None]):
                 self.conversations.get(self.active_peer, [])
             )
 
-    def _normalize_message_timestamp(
-        self, message: ChatMessage
-    ) -> ChatMessage:
+    def _normalize_message_timestamp(self, message: ChatMessage) -> ChatMessage:
         """Return a message copy with UTC-normalized timestamp when needed."""
         normalized_created_at = self._normalized_timestamp(message.created_at)
         if normalized_created_at == message.created_at:

@@ -1,9 +1,8 @@
 from textual.theme import Theme
 
-
 # https://lospec.com/palette-list/nostalgos-12
-NOSTALGOS_12 = Theme(
-    name='nostalgos-12',
+OGHAM_THEME = Theme(
+    name='ogham',
     primary='#5A8BDE',
     secondary='#55927F',
     accent='#B89CE9',

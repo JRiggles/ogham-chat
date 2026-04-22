@@ -93,6 +93,100 @@ class ContactCommandActions:
         return result
 
 
+class ThemeCommandActions:
+    """Bridge slash commands to theme selection side effects."""
+
+    def __init__(
+        self,
+        *,
+        default_theme_name: str,
+        default_theme_alias: str,
+        default_theme_label: str,
+        get_current_theme: Callable[[], str],
+        available_themes: Callable[[], dict[str, Any]],
+        get_theme: Callable[[str], Any | None],
+        set_theme: Callable[[str], None],
+        on_theme_applied: Callable[[Any], None] | None = None,
+    ) -> None:
+        """Store dependencies used by theme slash-command handlers."""
+        self.default_theme_name = default_theme_name
+        self.default_theme_alias = default_theme_alias
+        self.default_theme_label = default_theme_label
+        self.get_current_theme = get_current_theme
+        self.available_themes = available_themes
+        self.get_theme = get_theme
+        self.set_theme = set_theme
+        self.on_theme_applied = on_theme_applied
+
+    def get_available_themes(self) -> list[str]:
+        """Return all selectable themes including the default reset alias."""
+        themes = sorted(self.available_themes().keys(), key=str.lower)
+        # if self.default_theme_alias not in {name.lower() for name in themes}:
+        #     themes.append(self.default_theme_alias)
+        return themes
+
+    def current_theme_name(self) -> str:
+        """Return current theme, preferring a friendly default label."""
+        current = self.get_current_theme()
+        if current.lower() == self.default_theme_name.lower():
+            return self.default_theme_label
+        return current
+
+    def list_themes(self) -> str:
+        """Render theme listing output for /theme and /theme list."""
+        themes = self.get_available_themes()
+        if not themes:
+            return 'No themes are currently available'
+        current = self.get_current_theme().lower()
+        # NOTE: the currently selected theme will be rendered with !HIGHLIGHT!
+        # formatting in the listing
+        lines = '\n'.join(
+            f'- {"! " + theme + " !" if theme.lower() == current else theme}'
+            for theme in themes
+        )
+        return (
+            'Themes:\n'
+            f'{lines}\n\n'
+            'Use /theme <name> to apply one, or /theme default to reset'
+        )
+
+    def apply_theme(self, theme_name: str) -> str:
+        """Apply one theme by command argument and return status text."""
+        requested = theme_name.strip()
+        if not requested:
+            return 'Usage: /theme [list|<name>]'
+
+        requested_lower = requested.lower()
+        if requested_lower in {
+            self.default_theme_alias,
+            self.default_theme_name.lower(),
+            'ogham',
+        }:
+            resolved = self.default_theme_name
+        else:
+            resolved = requested
+            for candidate in self.available_themes():
+                if candidate.lower() == requested_lower:
+                    resolved = candidate
+                    break
+
+        theme = self.get_theme(resolved)
+        if theme is None:
+            available = ', '.join(self.get_available_themes())
+            return f'Unknown theme: {theme_name}. Available: {available}'
+
+        self.set_theme(resolved)
+        if self.on_theme_applied is not None:
+            self.on_theme_applied(theme)
+
+        shown = (
+            self.default_theme_alias
+            if resolved.lower() == self.default_theme_name.lower()
+            else resolved
+        )
+        return f'Theme set to {shown}'
+
+
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
@@ -103,6 +197,7 @@ WidgetT = TypeVar('WidgetT')
 CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
     'help',
     'about',
+    'theme',
     'refresh',
     'clear',
     'chat',
@@ -115,6 +210,7 @@ CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
 SLASH_COMMAND_ALIASES: dict[str, str] = {
     '?': 'help',
     'a': 'about',
+    't': 'theme',
     'r': 'refresh',
     'c': 'clear',
     'cls': 'clear',
@@ -180,6 +276,18 @@ class GroupCommandActions(Protocol):
         ...
 
 
+class ThemeActions(Protocol):
+    """Operations available for the /theme command namespace."""
+
+    def list_themes(self) -> str:
+        """Return formatted theme listing output."""
+        ...
+
+    def apply_theme(self, theme_name: str) -> str:
+        """Apply one theme and return status text."""
+        ...
+
+
 class SlashCommandHost(Protocol):
     """Capabilities required by the slash-command dispatcher."""
 
@@ -190,6 +298,7 @@ class SlashCommandHost(Protocol):
     conversations: dict[str, list[Any]]
     contact_commands: ContactActions
     group_commands: GroupCommandActions
+    theme_commands: ThemeActions
 
     def query_one(self, selector: str, expect_type: type[WidgetT]) -> WidgetT:
         """Return a widget by CSS selector and expected type."""
@@ -221,6 +330,12 @@ HELP_TEXT = '\n'.join(
         '__Slash commands:__',
         '**/help** (**/?**) - Show this help message',
         '**/about** (**/a**) - Show app info',
+        '**/theme** (**/t**) - List or set UI theme',
+        '  /theme',
+        '  /theme list',
+        '  /theme <name>',
+        "  /theme default - reset to Ogham's default theme",
+        '  /theme ogham - same as /theme default',
         '**/refresh** (**/r**) - Refresh history now',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
@@ -257,6 +372,7 @@ HELP_TEXT = '\n'.join(
         '',
     ]
 )
+
 
 def _write_system_output(host: SlashCommandHost, text: str) -> None:
     """Write slash-command output with a guaranteed trailing newline."""
@@ -305,6 +421,26 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
         await host.action_about()
         return True
 
+    if canonical_name == 'theme':
+        if not command.args or command.args[0].lower() in {'list', 'ls'}:
+            result = host.theme_commands.list_themes()
+            _write_system_output(host, result)
+            if result == 'No themes are currently available':
+                host._set_status(result)
+            else:
+                host._set_status('Showing available themes')
+            return True
+
+        theme_name = ' '.join(command.args).strip()
+        if not theme_name:
+            host._set_status('Usage: /theme [list|<name>]')
+            return True
+
+        result = host.theme_commands.apply_theme(theme_name)
+        _write_system_output(host, result)
+        host._set_status(result)
+        return True
+
     if canonical_name == 'refresh':
         await host.action_refresh()
         return True
@@ -315,9 +451,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             host.seen_messages.clear()
             chat = host.query_one('#chat', ChatLog)
             chat.set_messages([])
-            _write_system_output(
-                host, 'Cleared all local conversation history'
-            )
+            _write_system_output(host, 'Cleared all local conversation history')
             host._set_status('Cleared local history')
             return True
 
@@ -414,8 +548,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
         if action == 'remove':
             if not args:
                 host._set_status(
-                    'Usage: /group remove <group> or '
-                    '/group remove <username> <group>'
+                    'Usage: /group remove <group> or /group remove <username> <group>'
                 )
                 return True
             if len(args) == 1:

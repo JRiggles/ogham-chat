@@ -1,1 +1,1 @@
-from .theme import NOSTALGOS_12  # noqa: F401
+from .theme import OGHAM_THEME  # noqa: F401
