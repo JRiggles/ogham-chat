@@ -79,6 +79,16 @@ Horizontal {
     background: $background;
 }
 
+#composer.command-mode {
+    color: $accent;
+    text-style: bold;
+}
+
+#composer.command-mode .text-area--text {
+    color: $accent;
+    text-style: bold;
+}
+
 SplashScreen {
     align: center middle;
     background: $background 70%;

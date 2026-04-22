@@ -46,24 +46,37 @@ class ChatComposerAutocomplete(Message):
 class ComposerKeyActionMixin:
     """Mixin that handles composer key actions and slash autocomplete."""
 
+    @staticmethod
+    def _has_slash_command_prefix(text: str) -> bool:
+        """Return True when text begins with a single slash command prefix."""
+        normalized = text.lstrip()
+        return normalized.startswith('/') and not normalized.startswith('//')
+
     @property
-    def _is_slash_input(self) -> bool:
-        """True if the current text is a slash command (not an escaped //)."""
-        text = cast(TextArea, self).text.strip()
-        return text.startswith('/') and not text.startswith('//')
+    def command_mode_active(self) -> bool:
+        """Whether slash-command mode is currently active."""
+        return bool(getattr(self, '_command_mode_active', False))
+
+    @command_mode_active.setter
+    def command_mode_active(self, value: bool) -> None:
+        """Set slash-command mode state."""
+        self._command_mode_active = value
 
     async def on_key(self, event: events.Key) -> None:
         """Intercept keys to submit, insert newline, or run autocomplete."""
         composer = cast(TextArea, self)
+        stripped = composer.text.strip()
+        if not stripped:  # composer is empty or whitespace-only
+            self.command_mode_active = False
+        elif not self.command_mode_active:
+            self.command_mode_active = self._has_slash_command_prefix(
+                composer.text
+            )
         match event.name:
             case 'enter':
                 event.prevent_default()
                 event.stop()
                 composer.post_message(ChatComposerSubmit(composer.text))
-            case 'up' | 'down' if self._is_slash_input:
-                event.prevent_default()
-                event.stop()
-                self._autocomplete_slash_command(composer, reverse=event.name == 'up')
             case 'shift_enter':
                 event.prevent_default()
                 event.stop()
@@ -75,11 +88,22 @@ class ComposerKeyActionMixin:
         self, composer: TextArea, *, reverse: bool = False
     ) -> bool:
         """Autocomplete slash command names and `/chat` user arguments."""
+        stripped = composer.text.strip()
+        if not stripped:
+            self.command_mode_active = False
+        elif not self.command_mode_active:
+            self.command_mode_active = self._has_slash_command_prefix(
+                composer.text
+            )
+        command_mode_active = self.command_mode_active
+        completion_text = (
+            composer.text.lstrip() if command_mode_active else composer.text
+        )
         _suggester: ComposerSuggester | None = getattr(
             self, '_composer_suggester', None
         )
         result = autocomplete_slash_input(
-            text=composer.text,
+            text=completion_text,
             command_completions=slash_command_completions,
             chat_targets=_suggester._chat_targets if _suggester else [],
             theme_targets=_suggester._theme_targets if _suggester else [],
@@ -103,7 +127,9 @@ class ComposerKeyActionMixin:
                 composer.text = result.new_text
 
         if result.status_text:
-            composer.post_message(ChatComposerAutocomplete(text=result.status_text))
+            composer.post_message(
+                ChatComposerAutocomplete(text=result.status_text)
+            )
 
         return True
 
@@ -121,6 +147,7 @@ class ChatComposer(ComposerKeyActionMixin, TextArea):
         self._composer_suggester = ComposerSuggester(
             command_completions=slash_command_completions
         )
+        self._command_mode_active = False
         self._autocomplete_cycle_options: list[str] = []
         self._autocomplete_cycle_index = -1
         self._suppress_cycle_reset = False
@@ -139,20 +166,36 @@ class ChatComposer(ComposerKeyActionMixin, TextArea):
         """Emit typing on first input and schedule idle typing-off."""
         del event
 
+        stripped = self.text.strip()
+        if not stripped:
+            self.command_mode_active = False
+        elif not self.command_mode_active:
+            self.command_mode_active = self._has_slash_command_prefix(
+                self.text
+            )
+        command_mode_active = self.command_mode_active
+        self.set_class(command_mode_active, 'command-mode')
+
         if self._suppress_cycle_reset:
             self._suppress_cycle_reset = False
         else:
             self._autocomplete_cycle_options = []
             self._autocomplete_cycle_index = -1
 
-        full_suggestion = await self._composer_suggester.get_suggestion(self.text)
+        suggestion_text = (
+            self.text.lstrip() if command_mode_active else self.text
+        )
+        full_suggestion = await self._composer_suggester.get_suggestion(
+            suggestion_text
+        )
         self.suggestion = (
-            full_suggestion[len(self.text) :] if full_suggestion is not None else ''
+            full_suggestion[len(suggestion_text) :]
+            if full_suggestion is not None
+            else ''
         )
 
-        stripped = self.text.strip()
         active = bool(stripped)
-        remote_typing_active = active and not self._is_slash_input
+        remote_typing_active = active and not command_mode_active
 
         if not remote_typing_active:
             self._typing_generation += 1
@@ -174,7 +217,9 @@ class ChatComposer(ComposerKeyActionMixin, TextArea):
         if self._typing_idle_task is not None:
             self._typing_idle_task.cancel()
 
-        self._typing_idle_task = asyncio.create_task(self._emit_idle_stop(generation))
+        self._typing_idle_task = asyncio.create_task(
+            self._emit_idle_stop(generation)
+        )
 
     async def _emit_idle_stop(self, generation: int) -> None:
         """Emit typing-off when no newer keystroke arrives before timeout."""

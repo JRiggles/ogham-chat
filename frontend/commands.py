@@ -147,7 +147,7 @@ class ThemeCommandActions:
         return (
             'Themes:\n'
             f'{lines}\n\n'
-            'Use /theme <name> to apply one, or /theme default to reset'
+            'Use **/theme <name>** to apply one, or **/theme default** to reset'
         )
 
     def apply_theme(self, theme_name: str) -> str:
@@ -173,7 +173,10 @@ class ThemeCommandActions:
         theme = self.get_theme(resolved)
         if theme is None:
             available = ', '.join(self.get_available_themes())
-            return f'Unknown theme: {theme_name}. Available: {available}'
+            return (
+                f'Unknown theme: {theme_name}. Check /theme for '
+                'a list of available themes.'
+            )
 
         self.set_theme(resolved)
         if self.on_theme_applied is not None:
@@ -437,7 +440,6 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             return True
 
         result = host.theme_commands.apply_theme(theme_name)
-        _write_system_output(host, result)
         host._set_status(result)
         return True
 
