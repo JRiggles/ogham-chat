@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from pathlib import Path
+
+from frontend.local_prefs import LocalPreferences
 
 
 class ContactGroupManager:
     """Manage contact-group membership and local persistence."""
 
-    DEFAULT_PATH = Path.home() / '.ogham-chat' / 'contact_groups.json'
+    DEFAULT_PATH = Path.home() / '.ogham-chat' / 'oghamrc.json'
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        prefs: LocalPreferences | None = None,
+    ) -> None:
         """Initialize group manager with an optional storage path."""
         self.path = path or self.DEFAULT_PATH
+        self.prefs = prefs or LocalPreferences(path=self.path)
         self._groups_by_user: dict[str, set[str]] = defaultdict(set)
 
     @property
@@ -42,7 +48,9 @@ class ContactGroupManager:
         self._save()
         return f'Removed contact {normalized_username}', True
 
-    def add_contact_group(self, username: str, group_name: str) -> tuple[str, bool]:
+    def add_contact_group(
+        self, username: str, group_name: str
+    ) -> tuple[str, bool]:
         """Assign one contact to a named group and persist the update."""
         normalized_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
@@ -59,7 +67,9 @@ class ContactGroupManager:
         self._save()
         return f'Added {normalized_username} to group {normalized_group}', True
 
-    def remove_contact_group(self, username: str, group_name: str) -> tuple[str, bool]:
+    def remove_contact_group(
+        self, username: str, group_name: str
+    ) -> tuple[str, bool]:
         """Remove one contact from a named group and persist the update."""
         normalized_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
@@ -150,7 +160,9 @@ class ContactGroupManager:
         """Return a text summary of configured groups for one/all contacts."""
         if username:
             normalized_username = username.strip()
-            groups = sorted(self._groups_by_user.get(normalized_username, set()))
+            groups = sorted(
+                self._groups_by_user.get(normalized_username, set())
+            )
             if not groups:
                 return f'{normalized_username}: (no groups)'
             return f'{normalized_username}: {", ".join(groups)}'
@@ -171,52 +183,19 @@ class ContactGroupManager:
 
     def load(self) -> None:
         """Load persisted contact groups from local JSON storage."""
-        try:
-            raw = self.path.read_text(encoding='utf-8')
-        except FileNotFoundError:
-            return
-        except OSError:
-            return
-
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            return
-
-        if not isinstance(payload, dict):
-            return
-        groups_payload = payload.get('groups_by_user', {})
-        if not isinstance(groups_payload, dict):
-            return
-
-        loaded: dict[str, set[str]] = defaultdict(set)
-        for username, groups in groups_payload.items():
-            if not isinstance(username, str) or not isinstance(groups, list):
-                continue
+        loaded = self.prefs.get_groups_by_user()
+        normalized: dict[str, set[str]] = defaultdict(set)
+        for username, groups in loaded.items():
             for group in groups:
-                if not isinstance(group, str):
-                    continue
                 normalized_group = self._normalize_group_name(group)
                 if normalized_group:
-                    loaded[username].add(normalized_group)
+                    normalized[username].add(normalized_group)
 
-        self._groups_by_user = loaded
+        self._groups_by_user = normalized
 
     def _save(self) -> None:
         """Persist contact groups to local JSON storage."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            'version': 1,
-            'groups_by_user': {
-                username: sorted(groups)
-                for username, groups in sorted(self._groups_by_user.items())
-                if groups
-            },
-        }
-        self.path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + '\n',
-            encoding='utf-8',
-        )
+        self.prefs.set_groups_by_user(self._groups_by_user)
 
     def _normalize_group_name(self, group_name: str) -> str:
         """Normalize and validate group names for persistence and matching."""

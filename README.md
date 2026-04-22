@@ -54,11 +54,16 @@ You can manage one-level groups with slash commands:
 
 Groups are mirrored under both Online and Offline branches, so the same group name can show online and offline members separately.
 
-Group assignments persist locally at:
+Local app preferences persist in a single config file at:
 
 ```text
-~/.ogham-chat/contact_groups.json
+~/.ogham-chat/oghamrc.json
 ```
+
+This includes:
+
+- Contact groups (`groups_by_user`)
+- Last selected UI theme (`theme`)
 
 ## Docstring linting
 
