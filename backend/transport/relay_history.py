@@ -93,7 +93,7 @@ class RelayHistoryClient:
                 try:
                     with urlopen(request, timeout=10) as response:
                         payload = json.load(response)
-                except HTTPError, URLError, TimeoutError:
+                except (HTTPError, URLError, TimeoutError):
                     return []
             else:
                 self.on_status(f'History sync unavailable: {exc}')
@@ -130,4 +130,6 @@ class RelayHistoryClient:
         elif path.endswith('/ws'):
             path = path[:-3]
 
-        return urlunsplit((scheme, parts.netloc, path or '/', '', '')).rstrip('/')
+        return urlunsplit((scheme, parts.netloc, path or '/', '', '')).rstrip(
+            '/'
+        )
