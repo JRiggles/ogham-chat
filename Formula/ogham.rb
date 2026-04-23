@@ -1,6 +1,4 @@
 class Ogham < Formula
-  include Language::Python::Virtualenv
-
   desc "Minimal in-terminal chat app built with Textual"
   homepage "https://github.com/JRiggles/ogham-chat"
   license "MIT"
@@ -9,7 +7,7 @@ class Ogham < Formula
   depends_on "python@3.12"
 
   def install
-    venv = virtualenv_create(libexec, "python3.12")
+    system Formula["python@3.12"].opt_bin/"python3.12", "-m", "venv", libexec
     system libexec/"bin/pip", "install", buildpath
     bin.install_symlink libexec/"bin/ogham"
   end
