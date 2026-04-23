@@ -342,7 +342,7 @@ HELP_TEXT = '\n'.join(
         '**/refresh** (**/r**) - Refresh history now',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
-        '**/chat <username>** (**/dm**, **/peer**) - Switch active chat target',
+        '**/chat <username>** (**/dm**, **/peer**) - Open or start a chat',
         '**/contact** - Manage contacts',
         '  /contact add <username>',
         '  /contact remove <username>',
