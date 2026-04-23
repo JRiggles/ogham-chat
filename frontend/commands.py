@@ -454,7 +454,9 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             host.seen_messages.clear()
             chat = host.query_one('#chat', ChatLog)
             chat.set_messages([])
-            _write_system_output(host, 'Cleared all local conversation history')
+            _write_system_output(
+                host, 'Cleared all local conversation history'
+            )
             host._set_status('Cleared local history')
             return True
 
