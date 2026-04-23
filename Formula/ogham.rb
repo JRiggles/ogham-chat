@@ -10,14 +10,8 @@ class Ogham < Formula
 
   def install
     venv = virtualenv_create(libexec, "python3.12")
-    venv.pip_install %w[
-      fastapi[standard]>=0.135.3
-      psycopg[binary]>=3.2.9
-      slowapi>=0.1.9
-      sqlmodel>=0.0.24
-      textual>=8.2.3
-    ]
-    venv.pip_install_and_link buildpath
+    system libexec/"bin/pip", "install", buildpath
+    bin.install_symlink libexec/"bin/ogham"
   end
 
   test do
