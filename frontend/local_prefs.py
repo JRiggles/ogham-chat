@@ -8,7 +8,7 @@ from pathlib import Path
 class LocalPreferences:
     """Persist non-sensitive app preferences in a local JSON config."""
 
-    DEFAULT_PATH = Path.home() / '.ogham-chat' / 'oghamrc.json'
+    DEFAULT_PATH = Path.home() / '.ogham-chat' / '.oghamrc'
 
     def __init__(self, path: Path | None = None) -> None:
         """Initialize local preferences storage."""

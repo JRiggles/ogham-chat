@@ -57,7 +57,7 @@ Groups are mirrored under both Online and Offline branches, so the same group na
 Local app preferences persist in a single config file at:
 
 ```text
-~/.ogham-chat/oghamrc.json
+~/.ogham-chat/.oghamrc
 ```
 
 This includes:

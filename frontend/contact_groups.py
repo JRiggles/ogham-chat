@@ -9,15 +9,13 @@ from frontend.local_prefs import LocalPreferences
 class ContactGroupManager:
     """Manage contact-group membership and local persistence."""
 
-    DEFAULT_PATH = Path.home() / '.ogham-chat' / 'oghamrc.json'
-
     def __init__(
         self,
         path: Path | None = None,
         prefs: LocalPreferences | None = None,
     ) -> None:
         """Initialize group manager with an optional storage path."""
-        self.path = path or self.DEFAULT_PATH
+        self.path = path
         self.prefs = prefs or LocalPreferences(path=self.path)
         self._groups_by_user: dict[str, set[str]] = defaultdict(set)
 
