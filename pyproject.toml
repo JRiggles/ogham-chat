@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.11.8,<0.12"]
+build-backend = "uv_build"
 
 [project]
 name = "ogham-chat"
@@ -22,19 +22,9 @@ ogham = "frontend.chat_tui:main"
 [project.urls]
 Homepage = "https://github.com/JRiggles/ogham-chat"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["backend*", "frontend*"]
-
 [dependency-groups]
 dev = [
     "ruff>=0.12.0",
-]
-
-[tool.uv.workspace]
-members = [
-    "ogham-chat",
-    "ogham",
 ]
 
 [tool.fastapi]
@@ -57,3 +47,12 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "ogham-chat",
+    "ogham",
+]
