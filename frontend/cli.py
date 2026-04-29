@@ -25,11 +25,7 @@ def parse_args() -> ChatConfig:
     join_parser.add_argument('--name', default='guest')
 
     relay_parser = subparsers.add_parser(
-        'relay', help='Join remote relay endpoint'
-    )
-    relay_parser.add_argument(
-        '--url',
-        default='wss://ogham-chat.fastapicloud.dev/api/v1/ws',
+        'relay', help='Join the configured relay endpoint'
     )
     relay_parser.add_argument('--name', default='guest')
 
@@ -47,7 +43,6 @@ def parse_args() -> ChatConfig:
         return ChatConfig(
             mode='relay',
             username=args.name,
-            relay_url=args.url,
         )
 
     return ChatConfig(
