@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv_build>=0.11.8,<0.12"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ogham-chat"
@@ -55,4 +55,10 @@ package = false
 members = [
     "ogham-chat",
     "ogham",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "backend",
+    "frontend",
 ]
