@@ -1,14 +1,15 @@
 # Release Notes
 
-## v0.1.0-beta.1 - Beta Release
+## v0.1.0-beta.2 - Beta Release
 
-Release date: TBD
+Release date: 2026-04-28
 
 ### Highlights
 
-- Initial beta release of Ogham Chat.
+- Beta update for Ogham Chat.
 - Relay-first terminal chat workflow over a WebSocket endpoint.
 - Textual-based TUI focused on fast keyboard-driven messaging.
+- Packaging updated so Homebrew/pip wheel builds work with this repo layout.
 
 ### Beta Caveats
 
