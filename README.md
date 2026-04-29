@@ -1,8 +1,10 @@
 # Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜
 
-Minimal in-terminal chat app built with Textual.
+Relay-first in-terminal chat app built with Textual.
 
-Version: 0.1.0
+### Version: 0.1.0-beta.1
+
+**Ogham Chat** is a terminal UI client for person-to-person messaging over an online relay.
 
 ## Screenshots
 
@@ -10,29 +12,50 @@ Version: 0.1.0
 
 ![Slash Commands](screenshots/Slash%20Commands.png)
 
-## Setup
+## Release Scope
+
+- Beta release: not all planned core features are complete.
+
+
+## Beta Status
+
+Known gaps before stable release:
+
+- Redis-backed features are incomplete or not fully integrated.
+- End-to-end crypto flows are incomplete/missing.
+
+## Install (Homebrew Tap)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+brew tap jriggles/ogham-chat
+brew install ogham-chat
 ```
 
-## Run in two terminals
+If your tap name differs, use the tap path from your Homebrew tap repository.
 
-Terminal 1 (host):
+## Quickstart (Relay)
+
+Run two terminals and connect both users to the same relay endpoint.
+
+Terminal 1:
 
 ```bash
-python main.py host --port 9000 --name alice
+ogham relay --name alice
 ```
 
-Terminal 2 (join):
+Terminal 2:
 
 ```bash
-python main.py join --host 127.0.0.1 --port 9000 --name bob
+ogham relay --name bob
 ```
 
 Both terminals can send messages by typing and pressing Enter.
+
+## Hosted Relay
+
+The current relay endpoint is:
+
+`wss://ogham-chat.fastapicloud.dev/api/v1/ws`
 
 ## Contact Tree and Groups
 
@@ -65,52 +88,18 @@ This includes:
 - Contact groups (`groups_by_user`)
 - Last selected UI theme (`theme`)
 
-## Docstring linting
+## Core Commands
 
-This project enforces Google-style function/class docstrings with Ruff.
+- `/contact add <username>`
+- `/contact remove <username>`
+- `/group add <username> <group>`
+- `/group remove <username> <group>`
+- `/group delete <group>`
+- `/group list [username]`
+- `/theme list`
+- `/theme set <theme_name>`
 
-Run the check:
+## Contributing
 
-```bash
-ruff check backend frontend main.py api.py
-```
-
-## Run via relay
-
-Use the same TUI and point it at your deployed WebSocket relay endpoint.
-
-Terminal 1:
-
-```bash
-python main.py relay --url wss://ogham-chat.fastapicloud.dev/api/v1/ws --name alice
-```
-
-Terminal 2:
-
-```bash
-python main.py relay --url "wss://ogham-chat.fastapicloud.dev/api/v1/ws" --name bob
-```
-
-## Retention cleanup job
-
-If you are storing chat history in Supabase/Postgres, the app now includes both a manual cleanup command and a database-native scheduled job for expired rows.
-
-Apply the scheduler in the Supabase SQL editor:
-
-```sql
--- run ops/supabase/purge_expired_chat_messages.sql
-```
-
-That script creates `public.purge_expired_chat_messages(interval)` and schedules it with `pg_cron` to run daily at `00:05 UTC`, deleting rows from `chat_messages` older than 180 days.
-
-You can run the same purge manually against the configured database:
-
-```bash
-DATABASE_URL=postgresql://... python -m backend.maintenance purge-expired
-```
-
-To keep a different retention window for a one-off run:
-
-```bash
-DATABASE_URL=postgresql://... python -m backend.maintenance purge-expired --retention-days 90
-```
+Developer setup, source workflows, linting, backend operations, and release
+details are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
