@@ -2,7 +2,7 @@
 
 Relay-first in-terminal chat app built with Textual.
 
-### Version: 0.1.0-beta.2
+### Version: 0.1.0-beta.3
 
 **Ogham Chat** is a terminal UI client for person-to-person messaging over an online relay.
 
