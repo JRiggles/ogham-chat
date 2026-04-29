@@ -81,8 +81,7 @@ class ChatApp(App[None]):
     SPLASH_MIN_SECONDS = 1.0
     OGHAM_THEME_NAME = 'ogham'
     DEFAULT_THEME_ALIAS = 'default'
-    TITLE = 'Ogham Chat'
-    SUB_TITLE = 'Local Terminal Relay'
+    TITLE = 'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜'
     CSS_PATH = 'assets/style/chat.tcss'
 
     BINDINGS = [
@@ -199,15 +198,8 @@ class ChatApp(App[None]):
             )
             composer.focus()
 
-            self.title = f'Ogham Chat ᚛ᚑᚌᚆᚐᚋ᚜ Welcome {self.config.username}'
-            if self.config.mode == 'host':
-                self.sub_title = f'Hosting on 127.0.0.1:{self.config.port}'
-            elif self.config.mode == 'relay':
-                self.sub_title = 'Connected to Relay'
-            else:
-                self.sub_title = (
-                    f'Connected to {self.config.host}:{self.config.port}'
-                )
+            self.title = self.TITLE or ''
+            self.sub_title = f'Welcome {self.config.username}'
 
             chat.border_title = 'Chat Log'
             composer.border_title = (
