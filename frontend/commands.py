@@ -139,10 +139,10 @@ class ThemeCommandActions:
         if not themes:
             return 'No themes are currently available'
         current = self.get_current_theme().lower()
-        # NOTE: the currently selected theme will be rendered with !HIGHLIGHT!
+        # NOTE: the currently selected theme will be rendered with ==HIGHLIGHT==
         # formatting in the listing
         lines = '\n'.join(
-            f'- {"! " + theme + " !" if theme.lower() == current else theme}'
+            f'- {"==" + theme + "==" if theme.lower() == current else theme}'
             for theme in themes
         )
         return (
@@ -219,7 +219,6 @@ SLASH_COMMAND_ALIASES: dict[str, str] = {
     'c': 'clear',
     'cls': 'clear',
     'dm': 'chat',
-    'peer': 'chat',
     'g': 'group',
     's': 'status',
     'q': 'quit',
@@ -334,16 +333,9 @@ HELP_TEXT = '\n'.join(
         '__Slash commands:__',
         '**/help** (**/?**) - Show this help message',
         '**/about** (**/a**) - Show app info',
-        '**/theme** (**/t**) - List or set UI theme',
-        '  /theme',
-        '  /theme list',
-        '  /theme <name>',
-        "  /theme default - reset to Ogham's default theme",
-        '  /theme ogham - same as /theme default',
-        '**/refresh** (**/r**) - Refresh history now',
+        '**/chat <username>** (**/dm**) - Open or start a chat',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
-        '**/chat <username>** (**/dm**, **/peer**) - Open or start a chat',
         '**/contact** - Manage contacts',
         '  /contact add <username>',
         '  /contact remove <username>',
@@ -354,13 +346,21 @@ HELP_TEXT = '\n'.join(
         '  /group move <username> <from group> <to group>',
         '  /group delete <group>',
         '  /group list [username]',
-        '**/status** (**/s**) - Show current chat status',
         '**/quit** (**/q**, **/exit**) - Quit app (requires confirmation)',
         '  /quit confirm|yes|y',
+        '**/refresh** (**/r**) - Refresh history now',
+        '**/status** (**/s**) - Show current chat status',
+        '**/theme** (**/t**) - List or set UI theme',
+        '  /theme',
+        '  /theme list',
+        '  /theme <name>',
+        "  /theme default - reset to Ogham's default theme",
+        '  /theme ogham - same as /theme default',
         '',
         '**//message** - Send text that starts with a slash',
         '',
         '__Keyboard shortcuts:__',
+        '**Ctrl+C** - immediately exit the app (no confirmation)',
         '**Esc** - Clear system messages like this one',
         '',
         '__Message formatting:__',
@@ -368,11 +368,11 @@ HELP_TEXT = '\n'.join(
         r'\*italic\* - *Italic* text',
         r'\__underline\__ - __Underlined__ text',
         r'\~~strike\~~ - ~~Strikethrough~~ text',
-        r'\!highlight\! - Highlight important text',
+        r'\==highlight\== - Highlight important text',
         '',
         r'Escape formatting markers with "\"',
         r'\\*like this\\* → \*like this\*',
-        r'\\* \\! \\__ \\~~ \\!',
+        r'\\* \\== \\__ \\~~ \\==',
         '',
     ]
 )
@@ -399,7 +399,11 @@ def parse_slash_command(text: str) -> SlashCommand | None:
     if not stripped.startswith('/') or stripped.startswith('//'):
         return None
 
-    parts = stripped[1:].split()
+    body = stripped[1:]
+    if not body or body[0].isspace():
+        return None
+
+    parts = body.split()
     if not parts:
         return None
 

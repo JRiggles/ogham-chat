@@ -13,7 +13,7 @@ from backend.core.message import ChatMessage
 class ChatMessageRenderer:
     """Render chat messages into styled Rich text lines for the chat log."""
 
-    ESCAPABLE_MARKERS: tuple[str, ...] = ('**', '__', '~~', '*', '!')
+    ESCAPABLE_MARKERS: tuple[str, ...] = ('**', '__', '~~', '*', '==')
 
     INLINE_STYLES: tuple[tuple[re.Pattern[str], str], ...] = (
         (re.compile(r'\*\*(.+?)\*\*', re.DOTALL), 'bold'),
@@ -24,7 +24,7 @@ class ChatMessageRenderer:
             'italic',
         ),
     )
-    HIGHLIGHT_PATTERN = re.compile(r'(?<!\!)!([^!\n]+?)!(?!\!)', re.DOTALL)
+    HIGHLIGHT_PATTERN = re.compile(r'(?<!\=)==([^=\n]+?)==(?!\=)', re.DOTALL)
 
     def __init__(
         self,
