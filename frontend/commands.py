@@ -372,7 +372,7 @@ HELP_TEXT = '\n'.join(
         '',
         r'Escape formatting markers with "\"',
         r'\\*like this\\* → \*like this\*',
-        r'\\* \\== \\__ \\~~ \\==',
+        r'\\* \\__ \\~~ \\==',
         '',
     ]
 )
