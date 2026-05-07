@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from backend.core.username import UsernameValidationError, validate_username
 from frontend.contact_groups import ContactGroupManager
 
 
@@ -76,9 +77,13 @@ class ContactCommandActions:
     def add_contact(self, username: str) -> str:
         """Add a contact and trigger refresh."""
         # TODO: validate username against the DB — add if exists, notify if not
-        normalized = username.strip()
-        if not normalized:
+        raw_username = username.strip()
+        if not raw_username:
             return 'Usage: /contact add <username>'
+        try:
+            normalized = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}'
         if normalized in self.manager.contacts():
             return f'{normalized} is already a contact'
         self.manager.ensure_contact(normalized)
@@ -482,9 +487,14 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             host._set_status('Usage: /chat <username>')
             return True
 
-        username = command.args[0].strip()
-        if not username:
+        raw_username = command.args[0].strip()
+        if not raw_username:
             host._set_status('Usage: /chat <username>')
+            return True
+        try:
+            username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            host._set_status(f'Invalid username: {exc}')
             return True
 
         host._set_active_peer(username)

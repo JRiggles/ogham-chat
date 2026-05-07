@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
+from backend.core.username import UsernameValidationError, validate_username
 from frontend.local_prefs import LocalPreferences
 
 
@@ -30,16 +31,21 @@ class ContactGroupManager:
 
     def ensure_contact(self, username: str) -> None:
         """Create an empty group record for a contact if missing."""
-        normalized_username = username.strip()
-        if not normalized_username:
+        try:
+            normalized_username = validate_username(username)
+        except UsernameValidationError:
             return
         self._groups_by_user.setdefault(normalized_username, set())
 
     def remove_contact(self, username: str) -> tuple[str, bool]:
         """Remove a contact and all its group memberships, then persist."""
-        normalized_username = username.strip()
-        if not normalized_username:
+        raw_username = username.strip()
+        if not raw_username:
             return 'Usage: /contact remove <username>', False
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}', False
         if normalized_username not in self._groups_by_user:
             return f'{normalized_username} is not a saved contact', False
         del self._groups_by_user[normalized_username]
@@ -50,10 +56,14 @@ class ContactGroupManager:
         self, username: str, group_name: str
     ) -> tuple[str, bool]:
         """Assign one contact to a named group and persist the update."""
-        normalized_username = username.strip()
+        raw_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
-        if not normalized_username:
+        if not raw_username:
             return 'Usage: /group add <username> <group>', False
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}', False
         if not normalized_group:
             return 'Group names cannot be empty', False
         if normalized_group in {'online', 'offline'}:
@@ -69,10 +79,14 @@ class ContactGroupManager:
         self, username: str, group_name: str
     ) -> tuple[str, bool]:
         """Remove one contact from a named group and persist the update."""
-        normalized_username = username.strip()
+        raw_username = username.strip()
         normalized_group = self._normalize_group_name(group_name)
-        if not normalized_username:
+        if not raw_username:
             return 'Usage: /group remove <username> <group>', False
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}', False
         if not normalized_group:
             return 'Group names cannot be empty', False
 
@@ -99,14 +113,18 @@ class ContactGroupManager:
         target_group: str,
     ) -> tuple[str, bool]:
         """Move one contact from source group to target group and persist."""
-        normalized_username = username.strip()
+        raw_username = username.strip()
         normalized_source = self._normalize_group_name(source_group)
         normalized_target = self._normalize_group_name(target_group)
-        if not normalized_username:
+        if not raw_username:
             return (
                 'Usage: /group move <username> <from_group> <to_group>',
                 False,
             )
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}', False
         if not normalized_source or not normalized_target:
             return 'Group names cannot be empty', False
         if normalized_target in {'online', 'offline'}:
@@ -157,7 +175,10 @@ class ContactGroupManager:
     def list_contact_groups(self, username: str | None = None) -> str:
         """Return a text summary of configured groups for one/all contacts."""
         if username:
-            normalized_username = username.strip()
+            try:
+                normalized_username = validate_username(username)
+            except UsernameValidationError as exc:
+                return f'Invalid username: {exc}'
             groups = sorted(
                 self._groups_by_user.get(normalized_username, set())
             )
@@ -184,10 +205,14 @@ class ContactGroupManager:
         loaded = self.prefs.get_groups_by_user()
         normalized: dict[str, set[str]] = defaultdict(set)
         for username, groups in loaded.items():
+            try:
+                normalized_username = validate_username(username)
+            except UsernameValidationError:
+                continue
             for group in groups:
                 normalized_group = self._normalize_group_name(group)
                 if normalized_group:
-                    normalized[username].add(normalized_group)
+                    normalized[normalized_username].add(normalized_group)
 
         self._groups_by_user = normalized
 
