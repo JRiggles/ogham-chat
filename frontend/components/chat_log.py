@@ -233,6 +233,11 @@ class ChatLog(RichLog):
         self.messages = list(messages)
         self.rerender()
 
+    def set_self_username(self, username: str) -> None:
+        """Update the local username used for self-message styling."""
+        self.self_username = username
+        self.rerender()
+
     def set_message_styles(
         self,
         self_style: str,

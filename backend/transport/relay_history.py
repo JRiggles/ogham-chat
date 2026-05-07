@@ -8,6 +8,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from pydantic import ValidationError
+
 from backend.core.config import ChatConfig
 from backend.core.message import ChatMessage
 
@@ -30,7 +32,10 @@ class RelayHistoryClient:
         self, after: datetime | None = None
     ) -> list[ChatMessage]:
         """Fetch messages addressed to the current user after a timestamp."""
-        query_params = {'user_id': self.config.username}
+        if self.config.username is None:
+            return []
+
+        query_params: dict[str, str] = {'user_id': self.config.username}
         if after is not None:
             query_params['after'] = after.isoformat()
         return await self._fetch_messages('messages/sync', query_params)
@@ -41,7 +46,10 @@ class RelayHistoryClient:
         after: datetime | None = None,
     ) -> list[ChatMessage]:
         """Fetch a conversation between the current user and one peer."""
-        query_params = {
+        if self.config.username is None:
+            return []
+
+        query_params: dict[str, str] = {
             'user_id': self.config.username,
             'peer_id': peer_id,
         }
@@ -106,10 +114,21 @@ class RelayHistoryClient:
             return []
 
         messages: list[ChatMessage] = []
+        skipped_count = 0
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            messages.append(ChatMessage.model_validate(item))
+            try:
+                messages.append(ChatMessage.model_validate(item))
+            except ValidationError:
+                skipped_count += 1
+
+        if skipped_count:
+            noun = 'message' if skipped_count == 1 else 'messages'
+            self.on_status(
+                f'Skipped {skipped_count} malformed history {noun}'
+            )
+
         return messages
 
     def _api_base_url(self) -> str:

@@ -49,10 +49,14 @@ class RelayChatBackend:
         """
         if not self.config.relay_url:
             raise ValueError('relay_url is required for relay mode')
+        if self.config.username is None:
+            raise ValueError('username is required for relay mode')
+
+        username = self.config.username
 
         self.relay_url = self._normalize_relay_url(
             self.config.relay_url,
-            self.config.username,
+            username,
         )
         self.stopping = False
         self.on_status(f'Connecting to relay {self.relay_url}...')
@@ -87,6 +91,11 @@ class RelayChatBackend:
             self.on_status('Not connected; waiting for relay reconnect...')
             return
 
+        username = self.config.username
+        if username is None:
+            self.on_status('Cannot send before local identity is resolved')
+            return
+
         recipient = (to or self.config.peer or '').strip()
         if not recipient:
             self.on_status('No recipient selected')
@@ -94,7 +103,7 @@ class RelayChatBackend:
 
         message = ChatMessage(
             message_id=uuid4(),
-            sender=self.config.username,
+            sender=username,
             to=recipient,
             content=content,
             created_at=datetime.now(UTC),
@@ -125,6 +134,10 @@ class RelayChatBackend:
         if websocket is None:
             return
 
+        username = self.config.username
+        if username is None:
+            return
+
         recipient = (to or self.config.peer or '').strip()
         if not recipient:
             return
@@ -132,7 +145,7 @@ class RelayChatBackend:
         payload = {
             'type': 'typing',
             'data': {
-                'sender': self.config.username,
+                'sender': username,
                 'to': recipient,
                 'active': active,
             },

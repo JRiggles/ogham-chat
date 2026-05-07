@@ -9,18 +9,13 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 from textual import events
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Header, TextArea
+from textual.widgets import Header
 
-from backend import (
-    ChatConfig,
-    LocalChatBackend,
-    RelayChatBackend,
-    RelayHistoryClient,
-)
+from backend import ChatConfig
 from backend.core.message import ChatMessage
 from frontend.assets.style.theme import OGHAM_THEME
 from frontend.cli import parse_args
@@ -39,10 +34,13 @@ from frontend.components.composer import (
     ChatComposerTyping,
 )
 from frontend.components.contact_list import ContactList, ContactSelected
+from frontend.components.onboarding_dialog import OnboardingScreen
 from frontend.components.splash_screen import SplashScreen
 from frontend.components.status_footer import StatusFooter
 from frontend.contact_groups import ContactGroupManager
+from frontend.identity import IdentityManager, OnboardingCancelledError
 from frontend.local_prefs import LocalPreferences
+from frontend.runtime import ChatSessionRuntime
 
 MESSAGE_MAX_LENGTH = 4096
 
@@ -100,6 +98,10 @@ class ChatApp(App[None]):
         self.online_users: set[str] = set()
         self.known_contacts: set[str] = set()
         self.local_prefs = LocalPreferences()
+        self.identity_manager = IdentityManager(
+            config=self.config,
+            local_prefs=self.local_prefs,
+        )
         self.contact_group_manager = ContactGroupManager(
             prefs=self.local_prefs
         )
@@ -126,35 +128,25 @@ class ChatApp(App[None]):
         self._send_tokens_rate = 4.0  # tokens per second
         self._send_tokens_last = time.monotonic()
         self.conversations: dict[str, list[ChatMessage]] = defaultdict(list)
-        self.last_sync_at: datetime | None = None
-        self.history_client: RelayHistoryClient | None = None
-        self.sync_task: asyncio.Task[None] | None = None
         self.startup_task: asyncio.Task[None] | None = None
         self.refresh_in_flight = False
-
-        backend_cls = (
-            RelayChatBackend if config.mode == 'relay' else LocalChatBackend
-        )
-        self.backend = backend_cls(
-            config=config,
+        self.runtime = ChatSessionRuntime(
+            config=self.config,
             on_message=self._on_network_message,
             on_status=self._set_status,
             on_typing=self._on_network_typing,
             on_user_list=self._on_user_list,
+            normalize_timestamp=self._normalized_timestamp,
         )
-        if config.mode == 'relay':
-            self.history_client = RelayHistoryClient(
-                config=config,
-                on_status=self._set_status,
-            )
 
     def compose(self) -> ComposeResult:
         """Compose the application layout widgets."""
+        self_username = self.config.username or ''
         yield Header(show_clock=True)
         yield Horizontal(
-            ContactList(self_username=self.config.username, id='contacts'),
+            ContactList(self_username=self_username, id='contacts'),
             Vertical(
-                ChatLog(self_username=self.config.username, id='chat'),
+                ChatLog(self_username=self_username, id='chat'),
                 ChatComposer('', id='composer'),
                 id='chat-column',
             ),
@@ -183,13 +175,11 @@ class ChatApp(App[None]):
             self.contact_group_manager.load()
             self.known_contacts.update(self.contact_group_manager.contacts())
 
-            await self.backend.start()
-
-            await self._sync_recent_messages()
-            if self.history_client is not None:
-                self.sync_task = asyncio.create_task(self._sync_loop())
-            if self.active_peer:
-                await self._load_conversation(self.active_peer)
+            await self._resolve_identity(splash)
+            await self.runtime.start(
+                active_peer=self.active_peer,
+                on_history=self._merge_history,
+            )
 
             chat = self.query_one('#chat', ChatLog)
             composer = self.query_one('#composer', ChatComposer)
@@ -199,7 +189,7 @@ class ChatApp(App[None]):
             composer.focus()
 
             self.title = self.TITLE or ''
-            self.sub_title = f'Welcome {self.config.username}'
+            self.sub_title = f'Welcome {self.config.username or ""}'
 
             chat.border_title = 'Chat Log'
             composer.border_title = (
@@ -225,8 +215,9 @@ class ChatApp(App[None]):
             splash_remaining = self.SPLASH_MIN_SECONDS - splash_elapsed
             if splash_remaining > 0:
                 await asyncio.sleep(splash_remaining)
-            if self.screen is splash:
-                await self.pop_screen()
+            with contextlib.suppress(ScreenStackError):
+                if self.screen is splash:
+                    await self.pop_screen()
 
     def _set_theme_name(self, name: str) -> None:
         """Set the active Textual theme by registered name."""
@@ -251,12 +242,7 @@ class ChatApp(App[None]):
             with contextlib.suppress(asyncio.CancelledError):
                 await self.startup_task
             self.startup_task = None
-        if self.sync_task is not None:
-            self.sync_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self.sync_task
-            self.sync_task = None
-        await self.backend.stop()
+        await self.runtime.stop()
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-render chat content after terminal resize events."""
@@ -275,14 +261,17 @@ class ChatApp(App[None]):
         try:
             started_at = asyncio.get_running_loop().time()
             self._set_status('Refreshing history...')
-            await self._refresh_history(manual=False)
+            await self.runtime.refresh_history(active_peer=self.active_peer)
 
             elapsed = asyncio.get_running_loop().time() - started_at
             remaining = self.REFRESH_UI_MIN_SECONDS - elapsed
             if remaining > 0:
                 await asyncio.sleep(remaining)
 
-            self._set_status('Refreshed', '$success')
+            if self.runtime.history_available:
+                self._set_status('Refreshed', '$success')
+            else:
+                self._set_status('No messages')
             self.query_one('#composer', ChatComposer).focus()
         finally:
             self.refresh_in_flight = False
@@ -330,7 +319,7 @@ class ChatApp(App[None]):
                 host = cast(SlashCommandHost, self)
                 handled = await dispatch_slash_command(host, content)
                 if handled:
-                    await self.backend.send_typing(False, to=self.active_peer)
+                    await self.runtime.send_typing(False, to=self.active_peer)
                     return
 
         if not self._consume_send_token():
@@ -342,14 +331,18 @@ class ChatApp(App[None]):
 
         for chunk, is_continuation in _split_message(content):
             meta = {'continuation': True} if is_continuation else None
-            await self.backend.send(chunk, to=self.active_peer, metadata=meta)
-        await self.backend.send_typing(False, to=self.active_peer)
+            await self.runtime.send(
+                chunk,
+                to=self.active_peer,
+                metadata=meta,
+            )
+        await self.runtime.send_typing(False, to=self.active_peer)
 
     async def on_chat_composer_typing(
         self, message: ChatComposerTyping
     ) -> None:
         """Forward local typing-state changes to the backend transport."""
-        await self.backend.send_typing(message.active, to=self.active_peer)
+        await self.runtime.send_typing(message.active, to=self.active_peer)
 
     def on_chat_composer_autocomplete(
         self, message: ChatComposerAutocomplete
@@ -360,7 +353,7 @@ class ChatApp(App[None]):
     async def on_contact_selected(self, message: ContactSelected) -> None:
         """Switch active conversation when a contact is selected."""
         self._set_active_peer(message.username)
-        await self._load_conversation(message.username)
+        await self.runtime.load_conversation(message.username)
         self.query_one('#composer', ChatComposer).focus()
 
     def _on_user_list(self, users: list[str]) -> None:
@@ -441,10 +434,11 @@ class ChatApp(App[None]):
 
     def _write_system_message(self, text: str) -> None:
         """Append a local synthetic system message and persist it in view state."""
-        message = ChatMessage(
+        current_username = self.config.username or 'pendinguser'
+        message = ChatMessage.model_construct(
             message_id=uuid4(),
             sender='ogham-chat',
-            to=self.config.username,
+            to=current_username,
             content=self._sanitize_text(text),
             created_at=datetime.now(UTC),
             is_system=True,
@@ -523,6 +517,53 @@ class ChatApp(App[None]):
             else message.sender
         )
 
+    async def _resolve_identity(self, splash: SplashScreen) -> None:
+        """Resolve the runtime identity and bind it into mounted widgets."""
+        try:
+            username = await self.identity_manager.resolve_username(
+                lambda seed_username: self._prompt_for_identity_username(
+                    splash,
+                    seed_username,
+                )
+            )
+        except OnboardingCancelledError as exc:
+            self.exit(return_code=1)
+            raise RuntimeError(str(exc)) from exc
+
+        self._bind_resolved_username(username)
+
+    async def _prompt_for_identity_username(
+        self,
+        splash: SplashScreen,
+        seed_username: str | None,
+    ) -> str | None:
+        """Dismiss the splash and show the onboarding modal."""
+        if self.screen is splash:
+            await self.pop_screen()
+
+        return await self._wait_for_screen_result(
+            OnboardingScreen(seed_username=seed_username)
+        )
+
+    def _bind_resolved_username(self, username: str) -> None:
+        """Bind one resolved username into mounted widgets and local state."""
+        self.query_one('#contacts', ContactList).set_self_username(username)
+        self.query_one('#chat', ChatLog).set_self_username(username)
+
+    async def _wait_for_screen_result(
+        self, screen: OnboardingScreen
+    ) -> str | None:
+        """Push one screen and await its dismiss result outside a worker."""
+        loop = asyncio.get_running_loop()
+        result_future: asyncio.Future[str | None] = loop.create_future()
+
+        def _capture_result(result: str | None) -> None:
+            if not result_future.done():
+                result_future.set_result(result)
+
+        await self.push_screen(screen, callback=_capture_result)
+        return await result_future
+
     def _store_message(self, message: ChatMessage) -> None:
         """Insert a message into conversation history with dedup and ordering."""
         message = self._normalize_message_timestamp(message)
@@ -538,99 +579,23 @@ class ChatApp(App[None]):
             key=lambda item: self._normalized_timestamp(item.created_at)
         )
 
-    async def _sync_loop(self) -> None:
-        """Periodically fetch recent history while the app is running."""
-        while not self.shutting_down:
-            await asyncio.sleep(5)
-            await self._sync_recent_messages()
-
-    async def _refresh_history(self, *, manual: bool = False) -> None:
-        """Refresh incoming and active-conversation history from relay APIs."""
-        await self._sync_recent_messages()
-
-        if self.active_peer:
-            await self._load_conversation(self.active_peer)
-
-        if manual:
-            if self.history_client is not None:
-                self._set_status('Refreshed', '$success')
-            else:
-                self._set_status('No messages')
-
-    async def _sync_recent_messages(self) -> None:
-        """Fetch incoming relay messages and merge them into local state."""
-        if self.history_client is None:
-            return
-
-        try:
-            messages = await self.history_client.fetch_incoming_after(
-                self.last_sync_at
-            )
-        except Exception as exc:
-            self._set_status(f'Chat history sync failed: {exc}', '$error')
-            return
-
-        self._merge_history(messages, update_sync_cursor=True)
-
-    async def _load_conversation(self, peer_id: str) -> None:
-        """Load full conversation history for the selected peer."""
-        if self.history_client is None:
-            return
-
-        try:
-            messages = await self.history_client.fetch_conversation(peer_id)
-        except Exception as exc:
-            self._set_status(f'Conversation load failed: {exc}', '$error')
-            return
-
-        self._merge_history(messages)
-        if self.active_peer == peer_id:
-            self.query_one('#chat', ChatLog).set_messages(
-                self.conversations.get(peer_id, [])
-            )
-
-    def _merge_history(
-        self,
-        messages: list[ChatMessage],
-        *,
-        update_sync_cursor: bool = False,
-    ) -> None:
+    def _merge_history(self, messages: list[ChatMessage]) -> None:
         """Merge fetched history into local state while de-duplicating by id."""
-        latest_seen_at = (
-            self._normalized_timestamp(self.last_sync_at)
-            if self.last_sync_at is not None
-            else None
-        )
-
         for message in messages:
-            normalized_created_at = self._normalized_timestamp(
-                message.created_at
-            )
             if message.message_id in self.seen_messages:
-                if (
-                    latest_seen_at is None
-                    or normalized_created_at > latest_seen_at
-                ):
-                    latest_seen_at = normalized_created_at
                 continue
 
             sanitized = message.model_copy(
                 update={
                     'content': self._sanitize_text(message.content),
-                    'created_at': normalized_created_at,
+                    'created_at': self._normalized_timestamp(
+                        message.created_at
+                    ),
                 }
             )
             self.seen_messages.add(sanitized.message_id)
             self._remember_contact(self._peer_for_message(sanitized))
             self._store_message(sanitized)
-            if (
-                latest_seen_at is None
-                or normalized_created_at > latest_seen_at
-            ):
-                latest_seen_at = normalized_created_at
-
-        if update_sync_cursor:
-            self.last_sync_at = latest_seen_at
 
         if self.active_peer:
             self.query_one('#chat', ChatLog).set_messages(

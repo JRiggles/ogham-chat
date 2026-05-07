@@ -126,6 +126,10 @@ class ContactList(Tree[NodeData]):
                 self.select_node(node)
                 return
 
+    def set_self_username(self, username: str) -> None:
+        """Update the local username used to filter self from the tree."""
+        self.self_username = username
+
     def _iter_nodes(self, node: TreeNode[NodeData]) -> list[TreeNode[NodeData]]:
         """Return a depth-first list of descendants for one tree node."""
         result: list[TreeNode[NodeData]] = []

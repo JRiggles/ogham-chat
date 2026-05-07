@@ -1,3 +1,4 @@
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
 from textual.reactive import reactive
@@ -18,9 +19,11 @@ class StatusFooter(Footer):
     def compose(self) -> ComposeResult:
         """Compose footer bindings plus the current status label."""
         yield from super().compose()
-        yield Static(self.status_text, id='status-message')
+        yield Static(Text(self.status_text), id='status-message')
 
-    def _update_status_label(self, text: str, color: str | None = None) -> bool:
+    def _update_status_label(
+        self, text: str, color: str | None = None
+    ) -> bool:
         """Update mounted status label text if available.
 
         Returns:
@@ -31,7 +34,7 @@ class StatusFooter(Footer):
         except NoMatches:
             return False
 
-        label.update(text)
+        label.update(Text(text))
         if color is not None:
             # resolve $variable references (e.g. '$warning') from theme
             if color.startswith('$'):

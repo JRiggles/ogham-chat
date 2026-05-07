@@ -4,6 +4,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from backend.core.username import validate_username
+
 
 class LocalPreferences:
     """Persist non-sensitive app preferences in a local JSON config."""
@@ -45,6 +47,40 @@ class LocalPreferences:
     def set_theme(self, theme_name: str) -> None:
         """Persist selected theme name."""
         self._data['theme'] = theme_name.strip()
+        self.save()
+
+    def get_onboarding_completed(self) -> bool:
+        """Return whether first-run onboarding has completed."""
+        completed = self._data.get('onboarding_completed')
+        return bool(completed)
+
+    def set_onboarding_completed(self, completed: bool) -> None:
+        """Persist first-run onboarding completion state."""
+        self._data['onboarding_completed'] = bool(completed)
+        self.save()
+
+    def get_last_known_username(self) -> str | None:
+        """Return the last stored local username, if any."""
+        username = self._data.get('last_known_username')
+        if not isinstance(username, str):
+            return None
+        try:
+            return validate_username(username)
+        except ValueError:
+            return None
+
+    def set_last_known_username(self, username: str | None) -> None:
+        """Persist the last resolved local username."""
+        if username is None:
+            self._data.pop('last_known_username', None)
+        else:
+            self._data['last_known_username'] = validate_username(username)
+        self.save()
+
+    def clear_onboarding_state(self) -> None:
+        """Remove persisted onboarding metadata from local preferences."""
+        self._data.pop('onboarding_completed', None)
+        self._data.pop('last_known_username', None)
         self.save()
 
     def get_groups_by_user(self) -> dict[str, set[str]]:

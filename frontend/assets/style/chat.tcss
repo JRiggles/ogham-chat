@@ -127,6 +127,54 @@ SplashScreen #splash-loader {
     color: $warning;
 }
 
+OnboardingScreen {
+    align: center middle;
+    background: $background 70%;
+}
+
+OnboardingScreen #onboarding-card {
+    width: 64;
+    max-width: 80%;
+    height: auto;
+    layout: vertical;
+    border: round $primary;
+    background: $surface;
+    color: $foreground;
+    padding: 2;
+}
+
+OnboardingScreen .onboarding-copy {
+    padding-bottom: 1;
+}
+
+OnboardingScreen #onboarding-title {
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+OnboardingScreen #onboarding-rules-summary {
+    color: $warning;
+}
+
+OnboardingScreen #onboarding-rules {
+    color: $success;
+}
+
+OnboardingScreen #onboarding-username {
+    margin: 1 0;
+}
+
+OnboardingScreen #onboarding-error {
+    color: $error;
+    min-height: 1;
+    padding-bottom: 1;
+}
+
+OnboardingScreen #onboarding-actions {
+    height: auto;
+    align-horizontal: right;
+}
+
 
 StatusFooter #status-message {
     dock: right;
