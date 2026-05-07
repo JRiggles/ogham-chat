@@ -24,32 +24,59 @@ Known gaps before stable release:
 - Redis-backed features are incomplete or not fully integrated.
 - End-to-end crypto flows are incomplete/missing.
 
-## Install (Homebrew Tap)
+## Install
+
+Coming soon!
+
+<!-- ## Install (Homebrew Tap)
 
 ```bash
 brew tap jriggles/ogham-chat
 brew install ogham-chat
 ```
 
-If your tap name differs, use the tap path from your Homebrew tap repository.
+If your tap name differs, use the tap path from your Homebrew tap repository. -->
 
 ## Quickstart (Relay)
+
+Run `ogham`. The TUI will open, look for an existing local identity in your
+keychain, and prompt you to create one if none is found.
 
 Run two terminals and connect both users to the same relay endpoint.
 
 Terminal 1:
 
 ```bash
-ogham relay --name alice
+ogham
 ```
 
 Terminal 2:
 
 ```bash
-ogham relay --name bob
+ogham
 ```
 
-Both terminals can send messages by typing and pressing Enter.
+Both terminals can send messages by typing and pressing Enter once their local
+identity has been resolved.
+
+Usernames currently follow a strict canonical policy:
+
+- 3 to 24 characters
+- lowercase ASCII letters, digits, hyphen, and underscore only
+- must start with a letter
+- cannot end with a hyphen or underscore
+- cannot use consecutive separators such as `--`, `__`, `-_`, or `_-`
+
+The short version is:
+
+> Username may contain only lowercase letters, digits, hyphens, and underscores, and must start with a letter.
+
+## Local Test Modes
+
+`host` and `join` are developer-only local testing paths. They are not the
+intended public product interface and may be hidden or removed later.
+
+![Onboarding](screenshots/Onboarding.png)
 
 ## Hosted Relay
 
