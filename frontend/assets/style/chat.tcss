@@ -175,6 +175,92 @@ OnboardingScreen #onboarding-actions {
     align-horizontal: right;
 }
 
+AccountSwitcherScreen {
+    align: center middle;
+    background: $background 70%;
+}
+
+AccountSwitcherScreen #account-switcher-card {
+    width: 68;
+    max-width: 84%;
+    height: auto;
+    layout: vertical;
+    border: round $primary;
+    background: $surface;
+    color: $foreground;
+    padding: 2;
+}
+
+AccountSwitcherScreen .account-switcher-copy {
+    padding-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-title {
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-subtitle {
+    text-style: bold;
+    color: $warning;
+    padding-top: 1;
+}
+
+AccountSwitcherScreen #account-switcher-error {
+    color: $error;
+    min-height: 1;
+    padding-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-options {
+    height: auto;
+    margin-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-radio-set {
+    width: 1fr;
+    max-height: 12;
+}
+
+AccountSwitcherScreen #account-switcher-radio-set > RadioButton {
+    width: 1fr;
+}
+
+AccountSwitcherScreen #account-switcher-radio-set > RadioButton > .toggle--button {
+    color: $surface;
+    background: $surface;
+}
+
+AccountSwitcherScreen #account-switcher-radio-set > RadioButton.-on > .toggle--button {
+    color: $warning;
+    background: $surface;
+}
+
+AccountSwitcherScreen #account-switcher-preferences Checkbox > .toggle--button {
+    color: $background;
+    background: $background;
+}
+
+AccountSwitcherScreen #account-switcher-preferences Checkbox.-on > .toggle--button {
+    color: $foreground;
+    background: $success;
+}
+
+AccountSwitcherScreen #account-switcher-preferences {
+    height: auto;
+    margin-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-preferences Checkbox {
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+AccountSwitcherScreen #account-switcher-actions {
+    height: auto;
+    align-horizontal: right;
+}
+
 
 StatusFooter #status-message {
     dock: right;

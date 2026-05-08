@@ -4,8 +4,6 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from backend.core.username import validate_username
-
 
 class LocalPreferences:
     """Persist non-sensitive app preferences in a local JSON config."""
@@ -49,38 +47,28 @@ class LocalPreferences:
         self._data['theme'] = theme_name.strip()
         self.save()
 
-    def get_onboarding_completed(self) -> bool:
-        """Return whether first-run onboarding has completed."""
-        completed = self._data.get('onboarding_completed')
-        return bool(completed)
+    def get_startup_default_account_id(self) -> str | None:
+        """Return the preferred startup account id, if one is set."""
+        account_id = self._data.get('startup_default_account_id')
+        if isinstance(account_id, str) and account_id.strip():
+            return account_id.strip()
+        return None
 
-    def set_onboarding_completed(self, completed: bool) -> None:
-        """Persist first-run onboarding completion state."""
-        self._data['onboarding_completed'] = bool(completed)
-        self.save()
-
-    def get_last_known_username(self) -> str | None:
-        """Return the last stored local username, if any."""
-        username = self._data.get('last_known_username')
-        if not isinstance(username, str):
-            return None
-        try:
-            return validate_username(username)
-        except ValueError:
-            return None
-
-    def set_last_known_username(self, username: str | None) -> None:
-        """Persist the last resolved local username."""
-        if username is None:
-            self._data.pop('last_known_username', None)
+    def set_startup_default_account_id(self, account_id: str | None) -> None:
+        """Persist or clear the preferred startup account id."""
+        if account_id is None:
+            self._data.pop('startup_default_account_id', None)
         else:
-            self._data['last_known_username'] = validate_username(username)
+            self._data['startup_default_account_id'] = account_id.strip()
         self.save()
 
-    def clear_onboarding_state(self) -> None:
-        """Remove persisted onboarding metadata from local preferences."""
-        self._data.pop('onboarding_completed', None)
-        self._data.pop('last_known_username', None)
+    def get_hide_startup_account_switcher(self) -> bool:
+        """Return whether the startup account chooser should stay hidden."""
+        return bool(self._data.get('hide_startup_account_switcher', False))
+
+    def set_hide_startup_account_switcher(self, hidden: bool) -> None:
+        """Persist whether the startup account chooser should stay hidden."""
+        self._data['hide_startup_account_switcher'] = bool(hidden)
         self.save()
 
     def get_groups_by_user(self) -> dict[str, set[str]]:

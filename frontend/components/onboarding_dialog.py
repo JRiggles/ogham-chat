@@ -30,8 +30,8 @@ class OnboardingScreen(ModalScreen[str | None]):
                 id='onboarding-title',
             )
             yield Static(
-                'No existing Ogham Chat identity was found. Choose a username '
-                'to create one before connecting to the relay.',
+                'No existing Ogham Chat identity was found on this device. '
+                'Choose a username to create one before connecting to the relay.',
                 id='onboarding-subtitle',
                 classes='onboarding-copy',
             )

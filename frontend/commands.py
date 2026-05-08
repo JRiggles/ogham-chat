@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from backend.core.username import UsernameValidationError, validate_username
 from frontend.contact_groups import ContactGroupManager
+from frontend.identity import IdentityManager
 
 
 class ContactGroupCommandActions:
@@ -196,6 +197,154 @@ class ThemeCommandActions:
         return f'Theme set to {shown}'
 
 
+class AccountCommandActions:
+    """Bridge slash commands to local account management side effects."""
+
+    def __init__(
+        self,
+        manager: IdentityManager,
+        on_identity_changed: Callable[[str | None], Awaitable[None]],
+        open_account_switcher: Callable[[], str] | None = None,
+    ) -> None:
+        """Store dependencies used by account slash-command handlers."""
+        self.manager = manager
+        self.on_identity_changed = on_identity_changed
+        self.open_account_switcher = open_account_switcher
+
+    def list_accounts(self) -> str:
+        """Render a human-readable list of local accounts."""
+        identities = self.manager.list_local_identities()
+        if not identities:
+            return 'No local accounts configured'
+
+        active_identity = self.manager.get_active_identity()
+        active_account_id = (
+            active_identity.account_id if active_identity is not None else None
+        )
+        lines = ['Local accounts:']
+        for identity in sorted(
+            identities, key=lambda item: item.username.lower()
+        ):
+            suffix = (
+                ' (active)' if identity.account_id == active_account_id else ''
+            )
+            lines.append(f'- {identity.username}{suffix}')
+        return '\n'.join(lines)
+
+    async def add_account(self, username: str) -> str:
+        """Create one new local account, activating it if none exists."""
+        raw_username = username.strip()
+        if not raw_username:
+            return 'Usage: /account add <username>'
+
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}'
+
+        should_activate = self.manager.get_active_identity() is None
+        try:
+            identity = self.manager.add_local_identity(
+                normalized_username,
+                make_active=should_activate,
+            )
+        except RuntimeError as exc:
+            return str(exc)
+
+        if should_activate:
+            try:
+                await self.on_identity_changed(identity.username)
+            except Exception as exc:
+                return (
+                    f'Added local account {identity.username}, but '
+                    f'activation failed: {exc}'
+                )
+            return (
+                f'Added local account {identity.username} and made it active'
+            )
+
+        return f'Added local account {identity.username}'
+
+    async def switch_account(self, username: str | None = None) -> str:
+        """Select one existing local account as active."""
+        raw_username = (username or '').strip()
+        if not raw_username:
+            identities = self.manager.list_local_identities()
+            if not identities:
+                return 'No local accounts configured'
+            if self.open_account_switcher is None:
+                return 'Usage: /account switch <username>'
+            return self.open_account_switcher()
+
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}'
+
+        active_identity = self.manager.get_active_identity()
+        if (
+            active_identity is not None
+            and active_identity.username == normalized_username
+        ):
+            return f'{normalized_username} is already the active account'
+
+        try:
+            next_username = self.manager.set_active_identity_by_username(
+                normalized_username
+            )
+        except RuntimeError as exc:
+            return str(exc)
+
+        try:
+            await self.on_identity_changed(next_username)
+        except Exception as exc:
+            return (
+                f'Active account changed to {next_username}, but '
+                f'session restart failed: {exc}'
+            )
+        return f'Switched active account to {next_username}'
+
+    async def delete_account(self, username: str) -> str:
+        """Delete one local account and refresh the session if needed."""
+        raw_username = username.strip()
+        if not raw_username:
+            return 'Usage: /account delete <username>'
+
+        try:
+            normalized_username = validate_username(raw_username)
+        except UsernameValidationError as exc:
+            return f'Invalid username: {exc}'
+
+        try:
+            next_username, deleted_was_active = (
+                self.manager.delete_local_identity_by_username(
+                    normalized_username
+                )
+            )
+        except RuntimeError as exc:
+            return str(exc)
+
+        if deleted_was_active:
+            try:
+                await self.on_identity_changed(next_username)
+            except Exception as exc:
+                return (
+                    f'Deleted local account {normalized_username}, but '
+                    f'session restart failed: {exc}'
+                )
+            if next_username is None:
+                return (
+                    f'Deleted local account {normalized_username}; '
+                    'no active account remains'
+                )
+            return (
+                f'Deleted local account {normalized_username}; '
+                f'active account is now {next_username}'
+            )
+
+        return f'Deleted local account {normalized_username}'
+
+
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
@@ -206,6 +355,7 @@ WidgetT = TypeVar('WidgetT')
 CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
     'help',
     'about',
+    'account',
     'theme',
     'refresh',
     'clear',
@@ -219,6 +369,7 @@ CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
 SLASH_COMMAND_ALIASES: dict[str, str] = {
     '?': 'help',
     'a': 'about',
+    'acct': 'account',
     't': 'theme',
     'r': 'refresh',
     'c': 'clear',
@@ -296,6 +447,26 @@ class ThemeActions(Protocol):
         ...
 
 
+class AccountActions(Protocol):
+    """Operations available for the /account command namespace."""
+
+    def list_accounts(self) -> str:
+        """Return formatted local-account listing output."""
+        ...
+
+    async def add_account(self, username: str) -> str:
+        """Create one local account and return status text."""
+        ...
+
+    async def switch_account(self, username: str | None = None) -> str:
+        """Switch the active account and return status text."""
+        ...
+
+    async def delete_account(self, username: str) -> str:
+        """Delete one local account and return status text."""
+        ...
+
+
 class SlashCommandHost(Protocol):
     """Capabilities required by the slash-command dispatcher."""
 
@@ -307,6 +478,7 @@ class SlashCommandHost(Protocol):
     contact_commands: ContactActions
     group_commands: GroupCommandActions
     theme_commands: ThemeActions
+    account_commands: AccountActions
 
     def query_one(self, selector: str, expect_type: type[WidgetT]) -> WidgetT:
         """Return a widget by CSS selector and expected type."""
@@ -338,6 +510,11 @@ HELP_TEXT = '\n'.join(
         '__Slash commands:__',
         '**/help** (**/?**) - Show this help message',
         '**/about** (**/a**) - Show app info',
+        '**/account** (**/acct**) - Manage local accounts',
+        '  /account list',
+        '  /account add <username>',
+        '  /account switch [username]',
+        '  /account delete <username>',
         '**/chat <username>** (**/dm**) - Open or start a chat',
         '**/clear** (**/c**, **/cls**) - Clear current conversation from local view',
         '**/clear all** - Clear all local conversation history',
@@ -432,6 +609,45 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
 
     if canonical_name == 'about':
         await host.action_about()
+        return True
+
+    if canonical_name == 'account':
+        if not command.args or command.args[0].lower() in {'list', 'ls'}:
+            result = host.account_commands.list_accounts()
+            _write_system_output(host, result)
+            host._set_status('Showing local accounts')
+            return True
+
+        action = command.args[0].lower()
+        args = command.args[1:]
+
+        if action == 'add':
+            if not args:
+                host._set_status('Usage: /account add <username>')
+                return True
+            result = await host.account_commands.add_account(args[0])
+            _write_system_output(host, result)
+            host._set_status(result)
+            return True
+
+        if action in {'switch', 'use', 'select'}:
+            result = await host.account_commands.switch_account(
+                args[0] if args else None
+            )
+            _write_system_output(host, result)
+            host._set_status(result)
+            return True
+
+        if action in {'delete', 'remove', 'rm'}:
+            if not args:
+                host._set_status('Usage: /account delete <username>')
+                return True
+            result = await host.account_commands.delete_account(args[0])
+            _write_system_output(host, result)
+            host._set_status(result)
+            return True
+
+        host._set_status('Usage: /account list|add|switch|delete ...')
         return True
 
     if canonical_name == 'theme':

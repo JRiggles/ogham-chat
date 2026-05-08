@@ -40,7 +40,7 @@ If your tap name differs, use the tap path from your Homebrew tap repository. --
 ## Quickstart (Relay)
 
 Run `ogham`. The TUI will open, look for an existing local identity in your
-keychain, and prompt you to create one if none is found.
+system keychain, and prompt you to create one if none is found.
 
 Run two terminals and connect both users to the same relay endpoint.
 
@@ -115,8 +115,16 @@ This includes:
 - Contact groups (`groups_by_user`)
 - Last selected UI theme (`theme`)
 
+Local identity records are stored separately in the system keychain so they can
+later expand to hold sensitive key material without writing that identity data
+into `.oghamrc`.
+
 ## Core Commands
 
+- `/account list`
+- `/account add <username>`
+- `/account switch <username>`
+- `/account delete <username>`
 - `/contact add <username>`
 - `/contact remove <username>`
 - `/group add <username> <group>`

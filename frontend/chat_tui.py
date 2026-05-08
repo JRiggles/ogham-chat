@@ -5,7 +5,7 @@ import re
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 from uuid import UUID, uuid4
 
 from textual import events
@@ -13,6 +13,7 @@ from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
+from textual.screen import ModalScreen
 from textual.widgets import Header
 
 from backend import ChatConfig
@@ -20,11 +21,16 @@ from backend.core.message import ChatMessage
 from frontend.assets.style.theme import OGHAM_THEME
 from frontend.cli import parse_args
 from frontend.commands import (
+    AccountCommandActions,
     ContactCommandActions,
     ContactGroupCommandActions,
     SlashCommandHost,
     ThemeCommandActions,
     dispatch_slash_command,
+)
+from frontend.components.account_switcher_dialog import (
+    AccountSwitcherScreen,
+    StartupAccountChoice,
 )
 from frontend.components.chat_log import ChatLog
 from frontend.components.composer import (
@@ -38,11 +44,17 @@ from frontend.components.onboarding_dialog import OnboardingScreen
 from frontend.components.splash_screen import SplashScreen
 from frontend.components.status_footer import StatusFooter
 from frontend.contact_groups import ContactGroupManager
-from frontend.identity import IdentityManager, OnboardingCancelledError
+from frontend.identity import (
+    AccountSelectionCancelledError,
+    IdentityManager,
+    IdentityResolutionCancelledError,
+    LocalIdentity,
+)
 from frontend.local_prefs import LocalPreferences
 from frontend.runtime import ChatSessionRuntime
 
 MESSAGE_MAX_LENGTH = 4096
+ScreenResultT = TypeVar('ScreenResultT')
 
 
 def _split_message(
@@ -98,9 +110,11 @@ class ChatApp(App[None]):
         self.online_users: set[str] = set()
         self.known_contacts: set[str] = set()
         self.local_prefs = LocalPreferences()
-        self.identity_manager = IdentityManager(
-            config=self.config,
-            local_prefs=self.local_prefs,
+        self.identity_manager = IdentityManager(config=self.config)
+        self.account_commands = AccountCommandActions(
+            manager=self.identity_manager,
+            on_identity_changed=self._on_active_account_changed,
+            open_account_switcher=self._open_runtime_account_switcher,
         )
         self.contact_group_manager = ContactGroupManager(
             prefs=self.local_prefs
@@ -129,6 +143,7 @@ class ChatApp(App[None]):
         self._send_tokens_last = time.monotonic()
         self.conversations: dict[str, list[ChatMessage]] = defaultdict(list)
         self.startup_task: asyncio.Task[None] | None = None
+        self.account_switch_task: asyncio.Task[None] | None = None
         self.refresh_in_flight = False
         self.runtime = ChatSessionRuntime(
             config=self.config,
@@ -509,6 +524,37 @@ class ChatApp(App[None]):
         self.known_contacts.update(self.contact_group_manager.contacts())
         self._refresh_contacts()
 
+    async def _on_active_account_changed(self, username: str | None) -> None:
+        """Rebind UI and runtime state after the active local account changes."""
+        await self.runtime.stop()
+        self.runtime.last_sync_at = None
+        self.online_users.clear()
+        self.seen_messages.clear()
+        self.conversations.clear()
+        self._reset_chat_state()
+        self._bind_resolved_username(username or '')
+
+        if not username:
+            self._set_status(
+                'No active local account. Add one with /account add <username>',
+                '$warning',
+            )
+            return
+
+        await self.runtime.start(
+            active_peer=None,
+            on_history=self._merge_history,
+        )
+
+    def _reset_chat_state(self) -> None:
+        """Clear active conversation state after an identity session change."""
+        self.active_peer = None
+        self.query_one('#chat', ChatLog).border_title = 'Chat Log'
+        self.query_one('#chat', ChatLog).set_messages([])
+        self.query_one('#chat', ChatLog).clear_typing_peers()
+        self.query_one('#contacts').remove_class('has-peer')
+        self.query_one('#chat-column').remove_class('has-peer')
+
     def _peer_for_message(self, message: ChatMessage) -> str:
         """Return the conversation peer key for a message."""
         return (
@@ -520,17 +566,168 @@ class ChatApp(App[None]):
     async def _resolve_identity(self, splash: SplashScreen) -> None:
         """Resolve the runtime identity and bind it into mounted widgets."""
         try:
-            username = await self.identity_manager.resolve_username(
+            username = await self._resolve_startup_username(splash)
+        except IdentityResolutionCancelledError as exc:
+            self.exit(return_code=1)
+            raise RuntimeError(str(exc)) from exc
+
+        self._bind_resolved_username(username)
+
+    async def _resolve_startup_username(self, splash: SplashScreen) -> str:
+        """Resolve the startup username, prompting when multiple accounts exist."""
+        if self.config.mode != 'relay':
+            return await self.identity_manager.resolve_username(
                 lambda seed_username: self._prompt_for_identity_username(
                     splash,
                     seed_username,
                 )
             )
-        except OnboardingCancelledError as exc:
-            self.exit(return_code=1)
-            raise RuntimeError(str(exc)) from exc
 
-        self._bind_resolved_username(username)
+        identities = self.identity_manager.list_local_identities()
+        if len(identities) <= 1:
+            return await self.identity_manager.resolve_username(
+                lambda seed_username: self._prompt_for_identity_username(
+                    splash,
+                    seed_username,
+                )
+            )
+
+        selected_identity = await self._select_startup_identity(
+            splash,
+            identities,
+        )
+        return self.identity_manager.set_active_identity(
+            selected_identity.account_id
+        )
+
+    async def _select_startup_identity(
+        self,
+        splash: SplashScreen,
+        identities: list[LocalIdentity],
+    ) -> LocalIdentity:
+        """Resolve one startup identity from prefs or the startup chooser."""
+        default_account_id = self.local_prefs.get_startup_default_account_id()
+        default_identity = (
+            self.identity_manager.get_local_identity(default_account_id)
+            if default_account_id is not None
+            else None
+        )
+        if default_account_id is not None and default_identity is None:
+            self.local_prefs.set_startup_default_account_id(None)
+
+        active_identity = self.identity_manager.get_active_identity()
+        initial_identity = default_identity or active_identity or identities[0]
+
+        if self.local_prefs.get_hide_startup_account_switcher():
+            return initial_identity
+
+        choice = await self._prompt_for_startup_account(
+            splash,
+            identities,
+            initial_identity.account_id,
+            default_account_id,
+        )
+        if choice is None:
+            raise AccountSelectionCancelledError(
+                'Startup account selection cancelled'
+            )
+
+        if choice.make_default:
+            self.local_prefs.set_startup_default_account_id(choice.account_id)
+        else:
+            self.local_prefs.set_startup_default_account_id(None)
+        self.local_prefs.set_hide_startup_account_switcher(choice.hide_dialog)
+
+        selected_identity = self.identity_manager.get_local_identity(
+            choice.account_id
+        )
+        if selected_identity is None:
+            raise RuntimeError('Selected local account no longer exists')
+        return selected_identity
+
+    async def _prompt_for_startup_account(
+        self,
+        splash: SplashScreen,
+        identities: list[LocalIdentity],
+        selected_account_id: str,
+        default_account_id: str | None,
+    ) -> StartupAccountChoice | None:
+        """Dismiss the splash and show the startup account chooser modal."""
+        if self.screen is splash:
+            await self.pop_screen()
+
+        return await self._wait_for_screen_result(
+            AccountSwitcherScreen(
+                identities,
+                selected_account_id=selected_account_id,
+                default_account_id=default_account_id,
+                hide_dialog=self.local_prefs.get_hide_startup_account_switcher(),
+            )
+        )
+
+    async def _prompt_for_runtime_account_switch(self) -> str | None:
+        """Show the account switcher and return the selected username."""
+        identities = self.identity_manager.list_local_identities()
+        if not identities:
+            return None
+
+        active_identity = self.identity_manager.get_active_identity()
+        selected_account_id = (
+            active_identity.account_id if active_identity is not None else None
+        )
+        choice = await self._wait_for_screen_result(
+            AccountSwitcherScreen(
+                identities,
+                selected_account_id=selected_account_id,
+                title='Switch local account',
+                subtitle='Select which local identity to make active:',
+                submit_label='Switch',
+                cancel_label='Close',
+                show_preferences=False,
+            )
+        )
+        if choice is None:
+            return None
+
+        selected_identity = self.identity_manager.get_local_identity(
+            choice.account_id
+        )
+        if selected_identity is None:
+            raise RuntimeError('Selected local account no longer exists')
+        return selected_identity.username
+
+    def _open_runtime_account_switcher(self) -> str:
+        """Launch the runtime account switcher."""
+        if (
+            self.account_switch_task is not None
+            and not self.account_switch_task.done()
+        ):
+            return 'Account switcher is already open'
+
+        self.account_switch_task = asyncio.create_task(
+            self._run_runtime_account_switch()
+        )
+        return 'Opening account switcher'
+
+    async def _run_runtime_account_switch(self) -> None:
+        """Drive one interactive runtime account-switch session."""
+        result = 'Account switch cancelled'
+        try:
+            selected_username = await self._prompt_for_runtime_account_switch()
+            if selected_username is None:
+                return
+            result = await self.account_commands.switch_account(
+                selected_username
+            )
+        except Exception as exc:
+            result = f'Account switch failed: {exc}'
+        finally:
+            self.account_switch_task = None
+
+        self._write_system_message(result)
+        self._set_status(result)
+        with contextlib.suppress(NoMatches):
+            self.query_one('#composer', ChatComposer).focus()
 
     async def _prompt_for_identity_username(
         self,
@@ -549,15 +746,21 @@ class ChatApp(App[None]):
         """Bind one resolved username into mounted widgets and local state."""
         self.query_one('#contacts', ContactList).set_self_username(username)
         self.query_one('#chat', ChatLog).set_self_username(username)
+        self.sub_title = (
+            f'Welcome {username}' if username else 'No active local account'
+        )
+        self._refresh_contacts()
 
     async def _wait_for_screen_result(
-        self, screen: OnboardingScreen
-    ) -> str | None:
+        self, screen: ModalScreen[ScreenResultT]
+    ) -> ScreenResultT | None:
         """Push one screen and await its dismiss result outside a worker."""
         loop = asyncio.get_running_loop()
-        result_future: asyncio.Future[str | None] = loop.create_future()
+        result_future: asyncio.Future[ScreenResultT | None] = (
+            loop.create_future()
+        )
 
-        def _capture_result(result: str | None) -> None:
+        def _capture_result(result: ScreenResultT | None) -> None:
             if not result_future.done():
                 result_future.set_result(result)
 

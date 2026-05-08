@@ -58,7 +58,9 @@ class ChatMessageRenderer:
 
         created_at_local = self._to_local_time(message.created_at)
 
-        header = f' {message.sender} - {created_at_local.strftime("%H:%M:%S")} '
+        header = (
+            f' {message.sender} - {created_at_local.strftime("%H:%M:%S")} '
+        )
         rendered_header = Text(header, style=header_style)
         name_start = rendered_header.plain.find(message.sender)
         if name_start != -1:
@@ -114,7 +116,8 @@ class ChatMessageRenderer:
                 highlight_style,
             )
             rendered_lines.extend(
-                formatted.wrap(console, max(width, 1)) or [Text('', style=base_style)]
+                formatted.wrap(console, max(width, 1))
+                or [Text('', style=base_style)]
             )
         return rendered_lines
 
@@ -266,11 +269,20 @@ class ChatLog(RichLog):
     def clear_system_messages(self) -> int:
         """Remove system messages from the current view and re-render."""
         original_count = len(self.messages)
-        self.messages = [message for message in self.messages if not message.is_system]
+        self.messages = [
+            message for message in self.messages if not message.is_system
+        ]
         removed_count = original_count - len(self.messages)
         if removed_count:
             self.rerender()
         return removed_count
+
+    def clear_typing_peers(self) -> None:
+        """Remove all typing indicators and re-render if needed."""
+        if not self.typing_peers:
+            return
+        self.typing_peers.clear()
+        self.rerender()
 
     def rerender(self) -> None:
         """Repaint all messages and any active typing indicator line."""
@@ -297,7 +309,11 @@ class ChatLog(RichLog):
 
         if self.typing_peers:
             names = ', '.join(sorted(self.typing_peers))
-            suffix = 'is typing...' if len(self.typing_peers) == 1 else 'are typing...'
+            suffix = (
+                'is typing...'
+                if len(self.typing_peers) == 1
+                else 'are typing...'
+            )
             self.write(
                 Text(f'{names} {suffix}', style='dim italic'),
                 scroll_end=False,
