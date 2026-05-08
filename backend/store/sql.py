@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import JSON, Column, delete, func, or_
 from sqlmodel import Field, Session, SQLModel, col, create_engine, select
 
@@ -38,6 +39,26 @@ def _normalize_timestamp(created_at: datetime) -> datetime:
     if created_at.tzinfo is None:
         return created_at.replace(tzinfo=UTC)
     return created_at.astimezone(UTC)
+
+
+def _row_to_chat_message(row: ChatMessageRow) -> ChatMessage | None:
+    """Build one validated chat message from a database row.
+
+    Rows that no longer satisfy the current validation policy are skipped
+    instead of breaking history reads for the entire response.
+    """
+    try:
+        return ChatMessage(
+            message_id=row.message_id,
+            sender=row.sender,
+            to=row.recipient,
+            content=row.content,
+            created_at=_normalize_timestamp(row.created_at),
+            is_system=row.is_system,
+            metadata=row.metadata_json,
+        )
+    except ValidationError:
+        return None
 
 
 class SQLMessageStore:
@@ -77,7 +98,9 @@ class SQLMessageStore:
 
         with Session(self.engine) as session:
             deleted_count = session.exec(
-                select(func.count()).select_from(ChatMessageRow).where(expires_before)
+                select(func.count())
+                .select_from(ChatMessageRow)
+                .where(expires_before)
             ).one()
 
             if deleted_count:
@@ -95,7 +118,9 @@ class SQLMessageStore:
         self, user_id: str, after: datetime | None = None
     ) -> list[ChatMessage]:
         """Return user-directed messages newer than an optional timestamp."""
-        statement = select(ChatMessageRow).where(ChatMessageRow.recipient == user_id)
+        statement = select(ChatMessageRow).where(
+            ChatMessageRow.recipient == user_id
+        )
         if after is not None:
             statement = statement.where(ChatMessageRow.created_at > after)
         statement = statement.order_by(col(ChatMessageRow.created_at))
@@ -103,18 +128,12 @@ class SQLMessageStore:
         with Session(self.engine) as session:
             rows = session.exec(statement).all()
 
-        return [
-            ChatMessage(
-                message_id=row.message_id,
-                sender=row.sender,
-                to=row.recipient,
-                content=row.content,
-                created_at=_normalize_timestamp(row.created_at),
-                is_system=row.is_system,
-                metadata=row.metadata_json,
-            )
-            for row in rows
-        ]
+        messages: list[ChatMessage] = []
+        for row in rows:
+            message = _row_to_chat_message(row)
+            if message is not None:
+                messages.append(message)
+        return messages
 
     def get_conversation(
         self,
@@ -142,15 +161,9 @@ class SQLMessageStore:
         with Session(self.engine) as session:
             rows = session.exec(statement).all()
 
-        return [
-            ChatMessage(
-                message_id=row.message_id,
-                sender=row.sender,
-                to=row.recipient,
-                content=row.content,
-                created_at=_normalize_timestamp(row.created_at),
-                is_system=row.is_system,
-                metadata=row.metadata_json,
-            )
-            for row in rows
-        ]
+        messages: list[ChatMessage] = []
+        for row in rows:
+            message = _row_to_chat_message(row)
+            if message is not None:
+                messages.append(message)
+        return messages

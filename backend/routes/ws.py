@@ -1,6 +1,7 @@
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 
 from backend.store.base import MessageStoreProtocol
 from backend.ws.manager import ConnectionManager
@@ -44,7 +45,7 @@ def create_ws_router(
                 raw = await websocket.receive_text()
                 try:
                     packet = json.loads(raw)
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     continue
 
                 packet_type = packet.get('type')
@@ -54,7 +55,20 @@ def create_ws_router(
                     if isinstance(data, dict):
                         from backend.core.message import ChatMessage
 
-                        msg = ChatMessage.model_validate(data)
+                        try:
+                            msg = ChatMessage.model_validate(data)
+                        except ValidationError as exc:
+                            await websocket.send_json(
+                                {
+                                    'type': 'error',
+                                    'data': {
+                                        'code': 'invalid_message',
+                                        'message': str(exc.errors()[0]['msg']),
+                                    },
+                                }
+                            )
+                            continue
+
                         store.add(msg)
                         await ws_manager.send_to_user(msg.to, packet)
 
