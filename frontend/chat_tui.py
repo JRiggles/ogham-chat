@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeVar, cast
 from uuid import UUID, uuid4
 
-from textual import events
+from textual import events, on
 from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -212,10 +212,6 @@ class ChatApp(App[None]):
             )
             contacts = self.query_one('#contacts', ContactList)
             contacts.border_title = 'Contacts'
-            if self.active_peer:
-                self.call_after_refresh(
-                    chat.scroll_to_last_message_start,
-                )
 
             self._set_status(
                 'Ready — select a contact to start chatting',
@@ -263,6 +259,17 @@ class ChatApp(App[None]):
         """Re-render chat content after terminal resize events."""
         del event
         self.query_one('#chat', ChatLog).rerender()
+
+    @on(events.Click, 'Toast')
+    def _scroll_chat_on_toast_click(self, event: events.Click) -> None:
+        """Jump to the latest message when a notification toast is clicked."""
+        del event
+        with contextlib.suppress(NoMatches):
+            self.query_one('#chat', ChatLog).scroll_end(
+                animate=False,
+                immediate=True,
+                x_axis=False,
+            )
 
     async def action_refresh(self) -> None:
         """Manually refresh history and keep status visible briefly."""
@@ -403,7 +410,10 @@ class ChatApp(App[None]):
         if not message.is_system:
             chat.set_peer_typing(message.sender, False)
         if peer == self.active_peer:
-            chat.set_messages(self.conversations.get(peer, []))
+            chat.set_messages(
+                self.conversations.get(peer, []),
+                new_message=message,
+            )
 
     def _on_network_typing(self, username: str, active: bool) -> None:
         """Reflect typing activity from a peer in the chat log."""

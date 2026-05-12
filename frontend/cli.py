@@ -26,7 +26,11 @@ def _build_default_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='ogham',
         description='Minimal in-terminal relay chat',
-        epilog=(f'{USERNAME_RULES_SUMMARY}.\n{username_requirements_text()}'),
+        epilog=(
+            'Relay mode resolves your local account during startup.\n'
+            f'{USERNAME_RULES_SUMMARY}.\n'
+            f'{username_requirements_text()}'
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -34,12 +38,6 @@ def _build_default_parser() -> argparse.ArgumentParser:
         nargs='?',
         choices=['relay'],
         help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        '--name',
-        type=_username_argument,
-        default=None,
-        help=USERNAME_RULES_SUMMARY,
     )
     return parser
 
@@ -107,7 +105,7 @@ def parse_args(argv: Sequence[str] | None = None) -> ChatConfig:
 
     return ChatConfig(
         mode='relay',
-        requested_username=args.name,
+        requested_username=None,
         username=None,
-        onboarding_required=args.name is None,
+        onboarding_required=True,
     )

@@ -182,9 +182,8 @@ class ChatMessageRenderer:
 class ChatLog(RichLog):
     """RichLog widget that displays messages and typing indicators."""
 
-    # only auto-scroll to tail if user is within this many lines of the end
-    SCROLL_FOLLOW_TAIL_THRESHOLD = 1
     CONTENT_RIGHT_GUTTER = 2
+    FOLLOW_TAIL_THRESHOLD = 1
 
     def __init__(
         self,
@@ -194,47 +193,26 @@ class ChatLog(RichLog):
         renderer: ChatMessageRenderer | None = None,
     ) -> None:
         """Initialize chat log state and rendering strategy."""
-        super().__init__(id=id, highlight=False, auto_scroll=True, wrap=True)
+        super().__init__(id=id, highlight=False, auto_scroll=False, wrap=True)
         self.self_username = self_username
         self.renderer = renderer or ChatMessageRenderer()
         self.messages: list[ChatMessage] = []
         self.typing_peers: set[str] = set()
-
-    def scroll_to_last_message_start(self) -> None:
-        """Jump viewport to the start of the final rendered message block."""
-        if not self.messages:
-            return
-
-        width = max(
-            self.scrollable_content_region.width - self.CONTENT_RIGHT_GUTTER,
-            1,
-        )
-        start_line = 0
-        for message in self.messages[:-1]:
-            start_line += len(
-                self.renderer.render(
-                    message,
-                    width=width,
-                    self_username=self.self_username,
-                    console=self.app.console,
-                )
-            )
-
-        self.scroll_to(
-            y=min(start_line, self.max_scroll_y),
-            animate=False,
-            immediate=True,
-        )
 
     def append_message(self, message: ChatMessage) -> None:
         """Append one message and immediately re-render the log."""
         self.messages.append(message)
         self.rerender()
 
-    def set_messages(self, messages: list[ChatMessage]) -> None:
+    def set_messages(
+        self,
+        messages: list[ChatMessage],
+        *,
+        new_message: ChatMessage | None = None,
+    ) -> None:
         """Replace the full message list and re-render the log."""
         self.messages = list(messages)
-        self.rerender()
+        self.rerender(new_message=new_message)
 
     def set_self_username(self, username: str) -> None:
         """Update the local username used for self-message styling."""
@@ -284,7 +262,7 @@ class ChatLog(RichLog):
         self.typing_peers.clear()
         self.rerender()
 
-    def rerender(self) -> None:
+    def rerender(self, *, new_message: ChatMessage | None = None) -> None:
         """Repaint all messages and any active typing indicator line."""
         width = max(
             self.scrollable_content_region.width - self.CONTENT_RIGHT_GUTTER,
@@ -292,9 +270,9 @@ class ChatLog(RichLog):
         )
         previous_scroll_y = self.scroll_y
         previous_max_scroll_y = self.max_scroll_y
-        follow_tail = (
-            previous_max_scroll_y - previous_scroll_y
-            <= self.SCROLL_FOLLOW_TAIL_THRESHOLD
+        was_at_tail = self._is_at_tail(
+            previous_scroll_y=previous_scroll_y,
+            previous_max_scroll_y=previous_max_scroll_y,
         )
         self.clear()
 
@@ -319,7 +297,7 @@ class ChatLog(RichLog):
                 scroll_end=False,
             )
 
-        if follow_tail:
+        if was_at_tail:
             self.scroll_end(animate=False, immediate=True, x_axis=False)
         else:
             self.scroll_to(
@@ -327,3 +305,42 @@ class ChatLog(RichLog):
                 animate=False,
                 immediate=True,
             )
+
+        if new_message is not None and self._should_notify_for_message(
+            new_message, was_at_tail
+        ):
+            trim_length = 32
+            self.app.notify(
+                f'{new_message.content[:trim_length].rstrip()}'
+                f'{"..." if len(new_message.content) > trim_length else ""}',
+                title=f'New message from {new_message.sender}:',
+                severity='information',
+                timeout=4.2,
+                markup=False,
+            )
+
+    def _is_at_tail(
+        self,
+        *,
+        previous_scroll_y: float,
+        previous_max_scroll_y: float,
+    ) -> bool:
+        """Return whether the viewport had been positioned at the tail."""
+        return (
+            previous_max_scroll_y - previous_scroll_y
+            <= self.FOLLOW_TAIL_THRESHOLD
+        )
+
+    def _should_notify_for_message(
+        self,
+        message: ChatMessage | None,
+        was_at_tail: bool,
+    ) -> bool:
+        """Return whether a toast should be shown for one new message."""
+        if message is None:
+            return False
+        if was_at_tail:
+            return False
+        if message.is_system:
+            return False
+        return message.sender != self.self_username
