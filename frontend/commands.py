@@ -235,7 +235,7 @@ class AccountCommandActions:
         """Create one new local account, activating it if none exists."""
         raw_username = username.strip()
         if not raw_username:
-            return 'Usage: /account add <username>'
+            return 'Usage: /account new <username>'
 
         try:
             normalized_username = validate_username(raw_username)
@@ -369,7 +369,7 @@ CANONICAL_SLASH_COMMANDS: tuple[str, ...] = (
 SLASH_COMMAND_ALIASES: dict[str, str] = {
     '?': 'help',
     'a': 'about',
-    'acct': 'account',
+    'u': 'account',
     't': 'theme',
     'r': 'refresh',
     'c': 'clear',
@@ -510,9 +510,9 @@ HELP_TEXT = '\n'.join(
         '__Slash commands:__',
         '**/help** (**/?**) - Show this help message',
         '**/about** (**/a**) - Show app info',
-        '**/account** (**/acct**) - Manage local accounts',
-        '  /account list',
-        '  /account add <username>',
+        '**/account** (**/u**) - Manage your account(s)',
+        '  /account list - List your account(s)',
+        '  /account new <username>',
         '  /account switch [username]',
         '  /account delete <username>',
         '**/chat <username>** (**/dm**) - Open or start a chat',
@@ -621,9 +621,9 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
         action = command.args[0].lower()
         args = command.args[1:]
 
-        if action == 'add':
+        if action == 'new':
             if not args:
-                host._set_status('Usage: /account add <username>')
+                host._set_status('Usage: /account new <username>')
                 return True
             result = await host.account_commands.add_account(args[0])
             _write_system_output(host, result)
@@ -647,7 +647,7 @@ async def dispatch_slash_command(host: SlashCommandHost, text: str) -> bool:
             host._set_status(result)
             return True
 
-        host._set_status('Usage: /account list|add|switch|delete ...')
+        host._set_status('Usage: /account list|new|switch|delete ...')
         return True
 
     if canonical_name == 'theme':
