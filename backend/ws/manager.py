@@ -1,4 +1,3 @@
-import contextlib
 from collections import defaultdict
 from typing import DefaultDict
 
@@ -10,7 +9,9 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         """Initialize an empty user-to-connections mapping."""
-        self._connections: DefaultDict[str, list[WebSocket]] = defaultdict(list)
+        self._connections: DefaultDict[str, list[WebSocket]] = defaultdict(
+            list
+        )
 
     async def connect(self, user_id: str, websocket: WebSocket) -> None:
         """Accept and register a websocket for a user."""
@@ -27,14 +28,24 @@ class ConnectionManager:
 
     async def broadcast_user_list(self) -> None:
         """Send the current online user list to every connected client."""
-        payload = {
-            'type': 'user_list',
-            'data': {'users': self.connected_user_ids},
-        }
-        for conns in list(self._connections.values()):
+        await self.broadcast(
+            {
+                'type': 'user_list',
+                'data': {'users': self.connected_user_ids},
+            }
+        )
+
+    async def broadcast(self, payload: dict) -> None:
+        """Send a payload to every connected websocket on this instance."""
+        for user_id, conns in list(self._connections.items()):
+            stale: list[WebSocket] = []
             for websocket in list(conns):
-                with contextlib.suppress(Exception):
+                try:
                     await websocket.send_json(payload)
+                except Exception:
+                    stale.append(websocket)
+            for websocket in stale:
+                self.disconnect(user_id, websocket)
 
     async def send_to_user(self, user_id: str, payload: dict) -> None:
         """Send a payload to all active sockets currently attached to a user."""
@@ -68,6 +79,14 @@ class ConnectionManager:
     def connected_user_ids(self) -> list[str]:
         """Return currently connected user ids."""
         return list(self._connections.keys())
+
+    def has_user(self, user_id: str) -> bool:
+        """Return whether a user currently has any local websocket attached."""
+        return bool(self._connections.get(user_id))
+
+    def connection_count_for_user(self, user_id: str) -> int:
+        """Return how many local sockets are attached to one user."""
+        return len(self._connections.get(user_id, []))
 
     @property
     def active_user_count(self) -> int:

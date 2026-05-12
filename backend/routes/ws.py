@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from backend.realtime import RedisRealtimeCoordinator
 from backend.store.base import MessageStoreProtocol
 from backend.ws.manager import ConnectionManager
 
@@ -10,6 +11,7 @@ from backend.ws.manager import ConnectionManager
 def create_ws_router(
     ws_manager: ConnectionManager,
     store: MessageStoreProtocol,
+    realtime: RedisRealtimeCoordinator,
 ) -> APIRouter:
     """Create websocket routes for realtime chat transport events."""
     router = APIRouter()
@@ -24,6 +26,12 @@ def create_ws_router(
         - announce: broadcast arbitrary presence-like packets to others.
         """
         await ws_manager.connect(user_id, websocket)
+        await realtime.register_local_presence(
+            user_id,
+            is_first_local_connection=(
+                ws_manager.connection_count_for_user(user_id) == 1
+            ),
+        )
 
         await websocket.send_json(
             {
@@ -38,7 +46,7 @@ def create_ws_router(
         )
 
         # Tell everyone (including the new user) who is online.
-        await ws_manager.broadcast_user_list()
+        await realtime.broadcast_presence_snapshot()
 
         try:
             while True:
@@ -71,6 +79,7 @@ def create_ws_router(
 
                         store.add(msg)
                         await ws_manager.send_to_user(msg.to, packet)
+                        await realtime.publish_direct_message(msg.to, packet)
 
                 elif packet_type == 'typing':
                     data = packet.get('data')
@@ -78,6 +87,7 @@ def create_ws_router(
                         recipient = data.get('to')
                         if isinstance(recipient, str):
                             await ws_manager.send_to_user(recipient, packet)
+                            await realtime.publish_typing(recipient, packet)
 
                 elif packet_type == 'announce':
                     await ws_manager.broadcast_to_others(user_id, packet)
@@ -86,6 +96,10 @@ def create_ws_router(
             pass
         finally:
             ws_manager.disconnect(user_id, websocket)
-            await ws_manager.broadcast_user_list()
+            await realtime.unregister_local_presence(
+                user_id,
+                lost_last_local_connection=(not ws_manager.has_user(user_id)),
+            )
+            await realtime.broadcast_presence_snapshot()
 
     return router

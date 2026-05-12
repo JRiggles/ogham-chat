@@ -12,6 +12,7 @@ dependencies = [
     "fastapi[standard]>=0.135.3",
     "keyring>=25.7.0",
     "psycopg>=3.2.9",
+    "redis>=6.1.0",
     "slowapi>=0.1.9",
     "sqlmodel>=0.0.24",
     "textual>=8.2.3",
