@@ -1,13 +1,25 @@
 import re
 import textwrap
 from datetime import UTC, datetime
+from typing import Final, TypeAlias
 
 from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
+from textual.timer import Timer
 from textual.widgets import RichLog
 
 from backend.core.message import ChatMessage
+
+
+class _UnreadBoundaryUnchangedType:
+    """Sentinel type for omitted unread-boundary updates."""
+
+    __slots__ = ()
+
+
+UnreadBoundaryArg: TypeAlias = datetime | None | _UnreadBoundaryUnchangedType
+_UNREAD_BOUNDARY_UNCHANGED: Final = _UnreadBoundaryUnchangedType()
 
 
 class ChatMessageRenderer:
@@ -184,6 +196,8 @@ class ChatLog(RichLog):
 
     CONTENT_RIGHT_GUTTER = 2
     FOLLOW_TAIL_THRESHOLD = 1
+    UNREAD_DIVIDER_TEXT = '↓ Unread Messages ↓'
+    UNREAD_DIVIDER_HIDE_DELAY_SECONDS = 3.0
 
     def __init__(
         self,
@@ -198,6 +212,11 @@ class ChatLog(RichLog):
         self.renderer = renderer or ChatMessageRenderer()
         self.messages: list[ChatMessage] = []
         self.typing_peers: set[str] = set()
+        self.unread_boundary_at: datetime | None = None
+        self._reveal_unread_divider_on_next_render = False
+        self._revealing_unread_divider = False
+        self._unread_tail_timeout_pending = False
+        self._unread_hide_timer: Timer | None = None
 
     def append_message(self, message: ChatMessage) -> None:
         """Append one message and immediately re-render the log."""
@@ -209,9 +228,20 @@ class ChatLog(RichLog):
         messages: list[ChatMessage],
         *,
         new_message: ChatMessage | None = None,
+        unread_boundary_at: UnreadBoundaryArg = _UNREAD_BOUNDARY_UNCHANGED,
     ) -> None:
         """Replace the full message list and re-render the log."""
         self.messages = list(messages)
+        if unread_boundary_at is not _UNREAD_BOUNDARY_UNCHANGED:
+            assert unread_boundary_at is None or isinstance(
+                unread_boundary_at, datetime
+            )
+            self.unread_boundary_at = unread_boundary_at
+            self._reveal_unread_divider_on_next_render = (
+                unread_boundary_at is not None
+            )
+            self._unread_tail_timeout_pending = False
+            self._cancel_unread_hide_timer()
         self.rerender(new_message=new_message)
 
     def set_self_username(self, username: str) -> None:
@@ -262,6 +292,13 @@ class ChatLog(RichLog):
         self.typing_peers.clear()
         self.rerender()
 
+    def prepare_for_outbound_message(self) -> None:
+        """Clear unread UI state and keep the viewport pinned to the tail."""
+        self.scroll_end(animate=False, immediate=True, x_axis=False)
+        if self.unread_boundary_at is None:
+            return
+        self._clear_unread_boundary()
+
     def rerender(self, *, new_message: ChatMessage | None = None) -> None:
         """Repaint all messages and any active typing indicator line."""
         width = max(
@@ -274,9 +311,20 @@ class ChatLog(RichLog):
             previous_scroll_y=previous_scroll_y,
             previous_max_scroll_y=previous_max_scroll_y,
         )
+        unread_boundary_index = self._first_unread_message_index()
+        first_unread_message_line_y: int | None = None
+        rendered_line_count = 0
         self.clear()
 
-        for message in self.messages:
+        for index, message in enumerate(self.messages):
+            if unread_boundary_index == index:
+                self.write(
+                    Text(self.UNREAD_DIVIDER_TEXT, style='bold dim italic'),
+                    scroll_end=False,
+                )
+                self.write(Text(''), scroll_end=False)
+                rendered_line_count += 2
+                first_unread_message_line_y = rendered_line_count
             for line in self.renderer.render(
                 message,
                 width=width,
@@ -284,6 +332,7 @@ class ChatLog(RichLog):
                 console=self.app.console,
             ):
                 self.write(line, scroll_end=False)
+                rendered_line_count += 1
 
         if self.typing_peers:
             names = ', '.join(sorted(self.typing_peers))
@@ -296,8 +345,22 @@ class ChatLog(RichLog):
                 Text(f'{names} {suffix}', style='dim italic'),
                 scroll_end=False,
             )
+            rendered_line_count += 1
 
-        if was_at_tail:
+        if (
+            first_unread_message_line_y is not None
+            and self._reveal_unread_divider_on_next_render
+        ):
+            self._reveal_unread_divider_on_next_render = False
+            self._revealing_unread_divider = True
+            self.scroll_to(
+                y=min(first_unread_message_line_y, self.max_scroll_y),
+                animate=False,
+                immediate=True,
+            )
+            self._revealing_unread_divider = False
+            self._arm_or_clear_unread_tail_behavior()
+        elif was_at_tail:
             self.scroll_end(animate=False, immediate=True, x_axis=False)
         else:
             self.scroll_to(
@@ -318,6 +381,19 @@ class ChatLog(RichLog):
                 timeout=4.2,
                 markup=False,
             )
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        """Clear the unread divider when the user reaches the tail."""
+        super().watch_scroll_y(old_value, new_value)
+        if self.unread_boundary_at is None:
+            return
+        if self._revealing_unread_divider:
+            return
+        if not self._is_currently_at_tail():
+            return
+        if self._unread_tail_timeout_pending:
+            return
+        self._clear_unread_boundary()
 
     def _is_at_tail(
         self,
@@ -344,3 +420,83 @@ class ChatLog(RichLog):
         if message.is_system:
             return False
         return message.sender != self.self_username
+
+    def _first_unread_message_index(self) -> int | None:
+        """Return the first visible unread message position, if any."""
+        if self.unread_boundary_at is None:
+            return None
+
+        normalized_boundary = self._normalize_timestamp(
+            self.unread_boundary_at
+        )
+        for index, message in enumerate(self.messages):
+            if message.is_system:
+                continue
+            if (
+                self._normalize_timestamp(message.created_at)
+                > normalized_boundary
+            ):
+                return index if index > 0 else None
+
+        return None
+
+    def _is_currently_at_tail(self) -> bool:
+        """Return whether the viewport is currently positioned at the tail."""
+        return self._is_at_tail(
+            previous_scroll_y=self.scroll_y,
+            previous_max_scroll_y=self.max_scroll_y,
+        )
+
+    def _arm_or_clear_unread_tail_behavior(self) -> None:
+        """Hide the unread divider after a short delay when already at tail."""
+        if self.unread_boundary_at is None:
+            self._unread_tail_timeout_pending = False
+            self._cancel_unread_hide_timer()
+            return
+
+        if not self._is_currently_at_tail():
+            self._unread_tail_timeout_pending = False
+            self._cancel_unread_hide_timer()
+            return
+
+        self._unread_tail_timeout_pending = True
+        self._cancel_unread_hide_timer()
+        self._unread_hide_timer = self.set_timer(
+            self.UNREAD_DIVIDER_HIDE_DELAY_SECONDS,
+            self._clear_unread_if_still_at_tail,
+            name='unread-divider-hide',
+        )
+
+    def _clear_unread_if_still_at_tail(self) -> None:
+        """Hide the unread divider if the viewport is still at the tail."""
+        self._unread_tail_timeout_pending = False
+        self._unread_hide_timer = None
+        if self.unread_boundary_at is None:
+            return
+        if not self._is_currently_at_tail():
+            return
+        self._clear_unread_boundary()
+
+    def _clear_unread_boundary(self) -> None:
+        """Remove the unread divider and repaint without changing messages."""
+        if self.unread_boundary_at is None:
+            return
+        self.unread_boundary_at = None
+        self._reveal_unread_divider_on_next_render = False
+        self._unread_tail_timeout_pending = False
+        self._cancel_unread_hide_timer()
+        self.rerender()
+
+    def _cancel_unread_hide_timer(self) -> None:
+        """Stop any pending unread-divider hide timer."""
+        if self._unread_hide_timer is None:
+            return
+        self._unread_hide_timer.stop()
+        self._unread_hide_timer = None
+
+    @staticmethod
+    def _normalize_timestamp(value: datetime) -> datetime:
+        """Normalize any datetime value into timezone-aware UTC."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)

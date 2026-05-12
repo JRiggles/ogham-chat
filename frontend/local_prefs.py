@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ class LocalPreferences:
     """Persist non-sensitive app preferences in a local JSON config."""
 
     DEFAULT_PATH = Path.home() / '.ogham-chat' / '.oghamrc'
+    LATEST_SEEN_MESSAGES_KEY = 'latest_seen_message_by_account'
 
     def __init__(self, path: Path | None = None) -> None:
         """Initialize local preferences storage."""
@@ -95,6 +97,75 @@ class LocalPreferences:
             if groups
         }
         self.save()
+
+    def get_latest_seen_message_at(
+        self,
+        account_username: str,
+        peer_username: str,
+    ) -> datetime | None:
+        """Return the newest persisted seen-message timestamp for one peer."""
+        account_key = account_username.strip()
+        peer_key = peer_username.strip()
+        if not account_key or not peer_key:
+            return None
+
+        payload = self._data.get(self.LATEST_SEEN_MESSAGES_KEY, {})
+        if not isinstance(payload, dict):
+            return None
+
+        account_payload = payload.get(account_key)
+        if not isinstance(account_payload, dict):
+            return None
+
+        seen_at = account_payload.get(peer_key)
+        if not isinstance(seen_at, str) or not seen_at.strip():
+            return None
+
+        return self._parse_datetime(seen_at.strip())
+
+    def set_latest_seen_message_at(
+        self,
+        account_username: str,
+        peer_username: str,
+        seen_at: datetime | None,
+    ) -> None:
+        """Persist or clear the newest seen-message timestamp for one peer."""
+        account_key = account_username.strip()
+        peer_key = peer_username.strip()
+        if not account_key or not peer_key:
+            return
+
+        payload = self._data.get(self.LATEST_SEEN_MESSAGES_KEY)
+        if not isinstance(payload, dict):
+            payload = {}
+            self._data[self.LATEST_SEEN_MESSAGES_KEY] = payload
+
+        if seen_at is None:
+            account_payload = payload.get(account_key)
+            if isinstance(account_payload, dict):
+                account_payload.pop(peer_key, None)
+                if not account_payload:
+                    payload.pop(account_key, None)
+            if not payload:
+                self._data.pop(self.LATEST_SEEN_MESSAGES_KEY, None)
+            self.save()
+            return
+
+        account_payload = payload.get(account_key)
+        if not isinstance(account_payload, dict):
+            account_payload = {}
+            payload[account_key] = account_payload
+
+        account_payload[peer_key] = seen_at.isoformat()
+        self.save()
+
+    @staticmethod
+    def _parse_datetime(raw_value: str) -> datetime | None:
+        """Parse one persisted ISO datetime string, returning None on error."""
+        try:
+            return datetime.fromisoformat(raw_value)
+        except ValueError:
+            return None
 
     @staticmethod
     def _read_json_file(path: Path) -> object | None:

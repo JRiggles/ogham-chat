@@ -204,7 +204,7 @@ class ChatApp(App[None]):
             composer.focus()
 
             self.title = self.TITLE or ''
-            self.sub_title = f'Welcome {self.config.username or ""}'
+            self.sub_title = f'Hello {self.config.username or ""}'
 
             chat.border_title = 'Chat Log'
             composer.border_title = (
@@ -248,6 +248,7 @@ class ChatApp(App[None]):
     async def on_unmount(self) -> None:
         """Shut down background tasks and backend connections."""
         self.shutting_down = True
+        self._mark_active_conversation_read()
         if self.startup_task is not None:
             self.startup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -351,6 +352,9 @@ class ChatApp(App[None]):
             self.bell()  # ding!
             return
 
+        if self.active_peer is not None:
+            self.query_one('#chat', ChatLog).prepare_for_outbound_message()
+
         for chunk, is_continuation in _split_message(content):
             meta = {'continuation': True} if is_continuation else None
             await self.runtime.send(
@@ -375,7 +379,7 @@ class ChatApp(App[None]):
     async def on_contact_selected(self, message: ContactSelected) -> None:
         """Switch active conversation when a contact is selected."""
         self._set_active_peer(message.username)
-        await self.runtime.load_conversation(message.username)
+        await self._load_conversation(message.username)
         self.query_one('#composer', ChatComposer).focus()
 
     def _on_user_list(self, users: list[str]) -> None:
@@ -401,13 +405,13 @@ class ChatApp(App[None]):
         self._remember_contact(peer)
         self._store_message(message)
 
-        if not message.is_system:
-            self._set_active_peer(message.sender)
+        if self.active_peer is None and not message.is_system:
+            self._set_active_peer(peer)
 
         message.content = self._sanitize_text(message.content)
 
         chat = self.query_one('#chat', ChatLog)
-        if not message.is_system:
+        if peer == self.active_peer and not message.is_system:
             chat.set_peer_typing(message.sender, False)
         if peer == self.active_peer:
             chat.set_messages(
@@ -420,7 +424,9 @@ class ChatApp(App[None]):
         if self.shutting_down:
             return
 
-        self._set_active_peer(username)
+        if username != self.active_peer:
+            return
+
         self.query_one('#chat', ChatLog).set_peer_typing(username, active)
 
     def _set_active_peer(self, username: str) -> None:
@@ -432,13 +438,16 @@ class ChatApp(App[None]):
         if self.active_peer == username:
             return
 
+        self._mark_active_conversation_read()
+
         self.active_peer = username
         self._remember_contact(username)
         self.query_one(
             '#chat', ChatLog
         ).border_title = f'Chatting with {username}'
         self.query_one('#chat', ChatLog).set_messages(
-            self.conversations.get(username, [])
+            self.conversations.get(username, []),
+            unread_boundary_at=self._get_saved_unread_boundary(username),
         )
 
         if first_peer:
@@ -482,6 +491,19 @@ class ChatApp(App[None]):
 
         # Before a peer is selected, fall back to ephemeral rendering.
         chat.append_message(message)
+
+    async def _load_conversation(self, peer_id: str) -> None:
+        """Load one peer conversation and render any unread divider."""
+        unread_boundary_at = self._get_saved_unread_boundary(peer_id)
+        await self.runtime.load_conversation(peer_id)
+
+        if self.active_peer != peer_id:
+            return
+
+        self.query_one('#chat', ChatLog).set_messages(
+            self.conversations.get(peer_id, []),
+            unread_boundary_at=unread_boundary_at,
+        )
 
     def _sanitize_text(self, text: str) -> str:
         """Strip ANSI escapes and non-printable control characters."""
@@ -558,9 +580,12 @@ class ChatApp(App[None]):
 
     def _reset_chat_state(self) -> None:
         """Clear active conversation state after an identity session change."""
+        self._mark_active_conversation_read()
         self.active_peer = None
         self.query_one('#chat', ChatLog).border_title = 'Chat Log'
-        self.query_one('#chat', ChatLog).set_messages([])
+        self.query_one('#chat', ChatLog).set_messages(
+            [], unread_boundary_at=None
+        )
         self.query_one('#chat', ChatLog).clear_typing_peers()
         self.query_one('#contacts').remove_class('has-peer')
         self.query_one('#chat-column').remove_class('has-peer')
@@ -571,6 +596,56 @@ class ChatApp(App[None]):
             message.to
             if message.sender == self.config.username
             else message.sender
+        )
+
+    def _get_saved_unread_boundary(self, peer_id: str) -> datetime | None:
+        """Return the persisted newest-seen timestamp for one peer."""
+        username = self.config.username
+        if not username:
+            return None
+
+        boundary = self.local_prefs.get_latest_seen_message_at(
+            username,
+            peer_id,
+        )
+        if boundary is None:
+            return None
+        return self._normalized_timestamp(boundary)
+
+    def _mark_peer_conversation_read(self, peer_id: str) -> None:
+        """Persist the newest visible non-system message timestamp for one peer."""
+        username = self.config.username
+        if not username:
+            return
+
+        latest_message_at = self._latest_conversation_message_at(peer_id)
+        if latest_message_at is None:
+            return
+
+        self.local_prefs.set_latest_seen_message_at(
+            username,
+            peer_id,
+            latest_message_at,
+        )
+
+    def _mark_active_conversation_read(self) -> None:
+        """Persist the current active conversation as read, if one is open."""
+        if self.active_peer is None:
+            return
+        self._mark_peer_conversation_read(self.active_peer)
+
+    def _latest_conversation_message_at(self, peer_id: str) -> datetime | None:
+        """Return the newest non-system message timestamp in one conversation."""
+        conversation = self.conversations.get(peer_id, [])
+        non_system_messages = [
+            message for message in conversation if not message.is_system
+        ]
+        if not non_system_messages:
+            return None
+
+        return max(
+            self._normalized_timestamp(message.created_at)
+            for message in non_system_messages
         )
 
     async def _resolve_identity(self, splash: SplashScreen) -> None:
