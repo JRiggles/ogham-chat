@@ -42,5 +42,5 @@ Release date: 2026-04-28
 	- `brew tap jriggles/ogham-chat`
 	- `brew install ogham-chat`
 - Launch clients with relay mode, for example:
-	- `ogham relay --name alice`
+	- `ogham` *or* `ogham relay`
 - Relay endpoint is fixed to `wss://ogham-chat.fastapicloud.dev/api/v1/ws`.

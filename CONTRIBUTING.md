@@ -36,10 +36,10 @@ uv sync
 Relay mode (default product path):
 
 ```bash
-uv run python main.py relay --name alice
+uv run python main.py relay
 ```
 
-Run two terminals with different names to test chat flow.
+Run two terminals and select or create different local accounts during startup.
 
 Development-only local transport modes:
 
